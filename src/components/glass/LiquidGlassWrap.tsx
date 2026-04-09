@@ -267,12 +267,18 @@ export default function LiquidGlassWrap({
         }}
       />
 
-      {/* Layer 4: Color tint overlay */}
+      {/* Layer 4: Color tint overlay (two passes for visibility on any background) */}
       {tint && (
-        <span
-          className="absolute inset-0 rounded-[inherit] pointer-events-none"
-          style={{ background: tint, mixBlendMode: "overlay", opacity: 0.4 }}
-        />
+        <>
+          <span
+            className="absolute inset-0 rounded-[inherit] pointer-events-none"
+            style={{ background: tint, opacity: 0.55 }}
+          />
+          <span
+            className="absolute inset-0 rounded-[inherit] pointer-events-none"
+            style={{ background: tint, mixBlendMode: "overlay", opacity: 0.6 }}
+          />
+        </>
       )}
 
       {/* Layer 4: Border shine (screen) */}

@@ -10,6 +10,7 @@ interface GlassButtonProps {
   className?: string;
   size?: "sm" | "md" | "lg";
   disabled?: boolean;
+  tint?: string;
 }
 
 const sizeMap = {
@@ -24,6 +25,7 @@ export default function GlassButton({
   className = "",
   size = "md",
   disabled = false,
+  tint,
 }: GlassButtonProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { padding, fontSize } = sizeMap[size];
@@ -61,6 +63,7 @@ export default function GlassButton({
       <LiquidGlassWrap
         cornerRadius={100}
         padding={padding}
+        tint={tint}
         style={{ fontSize, fontWeight: 700 }}
         onClick={disabled ? undefined : onClick}
       >

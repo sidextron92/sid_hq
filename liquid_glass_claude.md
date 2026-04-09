@@ -40,7 +40,9 @@ Layer 2: Backdrop warp       — backdrop-filter: blur + saturate, with SVG disp
                                 using a pre-baked squircle displacement map.
 Layer 3: Hover highlight     — radial-gradient white glow that follows the cursor (mix-blend: overlay).
                                 Fades in on mouse enter, out on mouse leave. Provides specular feedback.
-Layer 4: Color tint           — Colored overlay (mix-blend: overlay, 40% opacity). Only renders when tint is set.
+Layer 4a: Color tint (normal)  — Colored fill (normal blend, 55% opacity). Provides solid color base visible on any background.
+Layer 4b: Color tint (overlay) — Same color (mix-blend: overlay, 60% opacity). Adds depth and interaction with backdrop.
+                                 Both layers only render when tint is set.
 Layer 5: Border shine (screen) — 1.5px edge highlight using mask-composite: xor trick.
                                   Linear gradient rotates with mouse position. mix-blend-mode: screen.
 Layer 6: Border shine (overlay) — Same as Layer 5 but with mix-blend-mode: overlay for metallic sheen.
@@ -134,9 +136,15 @@ Pill-shaped button with GSAP spring animations. Always `cornerRadius={100}`.
 <GlassButton size="sm">Small</GlassButton>
 <GlassButton size="lg">Large</GlassButton>
 <GlassButton disabled>Disabled</GlassButton>
+
+// Destructive / danger (red glass tint)
+<GlassButton tint="rgba(239, 68, 68, 0.35)">Delete</GlassButton>
+
+// Custom tint
+<GlassButton tint="rgba(99, 102, 241, 0.3)">Indigo</GlassButton>
 ```
 
-**Props**: `children`, `onClick`, `className`, `size` (`sm|md|lg`), `disabled`
+**Props**: `children`, `onClick`, `className`, `size` (`sm|md|lg`), `disabled`, `tint` (CSS color — passed to `LiquidGlassWrap` tint layer)
 
 **Size map**:
 - `sm`: padding `10px 20px`, font `13px`
@@ -271,6 +279,71 @@ Liquid glass search/input field inspired by [kube.io](https://kube.io/blog/liqui
 - Mouse up: spring back to `1.02` (if focused) or `1`
 - Each keystroke: `scaleX: 1.008, scaleY: 0.996` → snap back in 0.25s (subtle breathing)
 
+### GlassDropdown
+
+**File**: `GlassDropdown.tsx`
+
+Pill-shaped dropdown with a frosted glass menu panel. Trigger uses `LiquidGlassWrap` with input-tuned parameters; menu uses heavy-blur `LiquidGlassWrap`. Each option row uses the CSS glass recessed pattern. Closes on outside click or Escape.
+
+```tsx
+<GlassDropdown
+  options={[
+    { id: "board", label: "Board View", icon: <BoardIcon /> },
+    { id: "list", label: "List View" },
+    { id: "timeline", label: "Timeline", disabled: true },
+  ]}
+  value={view}
+  placeholder="Select view..."
+  onChange={(opt) => setView(opt.id)}
+/>
+
+// Custom size & width
+<GlassDropdown options={opts} size="sm" width={180} />
+<GlassDropdown options={opts} size="lg" width={320} />
+
+// Disabled
+<GlassDropdown options={opts} disabled />
+```
+
+**Props**: `options` (`{id, label, icon?, disabled?}[]`), `value`, `placeholder`, `onChange`, `size` (`sm|md|lg`), `disabled`, `width` (default: `240`), `className`
+
+**Size map**:
+- `sm`: padding `10px 16px`, font `13px`
+- `md`: padding `14px 20px`, font `15px`
+- `lg`: padding `18px 24px`, font `17px`
+
+**Visual spec**:
+- Trigger: pill shape (`cornerRadius: 100`), `LiquidGlassWrap` with `blurAmount: 8`, `displacementScale: 80`, `elasticity: 0.15`
+  - Chevron icon rotates 180deg on open
+  - Selected label in `--text-main`, placeholder in `--text-muted`
+- Menu panel: `LiquidGlassWrap` with `blurAmount: 80`, `displacementScale: 60`, `saturation: 160`, `cornerRadius: 20`, `shadowIntensity: 1.5`, `elasticity: 0`, `tint: rgba(0, 0, 0, 0.8)`
+  - Positioned below trigger (`mt-2`), full width
+- Option rows: transparent background by default (`border: 1px solid rgba(255,255,255,0.08)`, `box-shadow: inset 0 2px 6px rgba(0,0,0,0.3)`)
+  - Selected row: `rgba(255,255,255,0.1)` background with checkmark icon
+  - Optional icon: `32px` circle with `border: 1.5px solid rgba(255,255,255,0.15)`
+  - `rounded-2xl` corners
+
+**Interaction model**:
+1. **Tap trigger**: toggle menu open/closed
+2. **Outside click / Escape**: closes menu
+3. **Option hover**: row slides right `4px`, background lightens to `rgba(255,255,255,0.08)`
+4. **Option select**: fires `onChange`, closes menu, trigger gets scale punch
+
+**GSAP animations**:
+- Trigger hover: `scale → 1.03`, ease `back.out(1.7)`, 0.3s
+- Trigger leave: `scale → 1`, ease `elastic.out(1, 0.5)`, 0.4s
+- Trigger press: `scale → 0.96`, ease `power2.out`, 0.15s
+- Trigger release: `scale → 1.03`, ease `elastic.out(1, 0.4)`, 0.4s
+- Menu open: `scale: 0.85→1`, `y: -4→0`, `opacity: 0→1`, ease `elastic.out(1, 0.6)`, 0.4s
+- Menu close: `scale→0.85`, `y→-4`, `opacity→0`, ease `power2.in`, 0.2s
+- Chevron rotation: `0→180deg` (open), `180→0deg` (close), ease `back.out(1.7)`, 0.3s
+- Item stagger: `opacity: 0→1`, `x: -8→0`, ease `power2.out`, 0.3s, stagger `0.035s`
+- Item hover: `x → 4`, ease `power2.out`, 0.25s
+- Item leave: `x → 0`, ease `elastic.out(1, 0.5)`, 0.3s
+- Item press: `scale → 0.97`, ease `power2.out`, 0.1s
+- Item release: `scale → 1`, ease `elastic.out(1, 0.4)`, 0.3s
+- Selection punch: trigger `scale: 0.96→1`, ease `elastic.out(1, 0.4)`, 0.4s
+
 ### LayeredFAB
 
 **File**: `LayeredFAB.tsx`
@@ -315,6 +388,73 @@ Draggable magnifying-glass-style floating action button inspired by [kube.io](ht
 - Dead zone: 4px before drag is recognized (prevents accidental drag during tap)
 
 **Important**: No `scaleY` animations on the capsule. Elasticity from LiquidGlassWrap handles directional stretch via its own transform — adding GSAP `scaleY` would conflict and cause size fluctuation.
+
+### GlassModal
+
+**File**: `GlassModal.tsx`
+
+Full-screen modal overlay with a frosted glass backdrop and a glass panel. Uses `LiquidGlassWrap` for the panel body. Closes on backdrop click or Escape key.
+
+```tsx
+<GlassModal open={isOpen} onClose={() => setIsOpen(false)}>
+  <h2>Modal Title</h2>
+  <p>Modal content goes here.</p>
+</GlassModal>
+
+// Custom width
+<GlassModal open={isOpen} onClose={handleClose} width={500}>
+  ...
+</GlassModal>
+```
+
+**Props**: `children`, `open`, `onClose`, `className`, `width` (default: `420`)
+
+**Visual spec**:
+- Backdrop: `rgba(0, 0, 0, 0.6)`, `backdrop-filter: blur(8px) saturate(120%)`
+- Panel: `LiquidGlassWrap` with `blurAmount: 25`, `displacementScale: 60`, `saturation: 160`, `cornerRadius: 24`, `shadowIntensity: 1.8`, `elasticity: 0`
+- Close button: top-right, `32px` circle, `rgba(255,255,255,0.08)` background, hover brightens
+- Content area: `padding: 32px`, scrollable with `max-height: calc(100vh - 96px)`
+
+**GSAP animations**:
+- Backdrop fade in: `opacity: 0→1`, ease `power2.out`, 0.3s
+- Panel open: `scale: 0.85→1`, `y: 20→0`, `opacity: 0→1`, ease `elastic.out(1, 0.6)`, 0.5s
+- Panel close: `scale→0.85`, `y→20`, `opacity→0`, ease `power2.in`, 0.25s
+- Backdrop fade out: `opacity→0`, ease `power2.in`, 0.25s
+
+### GlassFormField
+
+**File**: `GlassFormField.tsx`
+
+Labeled form input field with liquid glass styling. Similar to FluidInput but designed for forms — includes a label, no icon, and uses a rounded-rect shape instead of pill.
+
+```tsx
+<GlassFormField
+  label="Name"
+  placeholder="Enter your name..."
+  value={name}
+  onChange={setName}
+/>
+
+// Email field
+<GlassFormField label="Email" type="email" placeholder="you@example.com" value={email} onChange={setEmail} />
+```
+
+**Props**: `label`, `placeholder`, `value`, `onChange`, `type` (default: `"text"`), `className`
+
+**Visual spec**:
+- Label: `text-xs font-bold uppercase tracking-widest` in `--text-muted`
+- Input wrapper: `LiquidGlassWrap` with `cornerRadius: 16`, `blurAmount: 8`, `displacementScale: 80`, `elasticity: 0.15`
+- Border shine: `0.6` default, `1.0` on focus
+- Shadow: `0.5` default, `0.8` on focus
+- Text: `15px`, `rgba(255,255,255,0.85)`, `text-shadow: 0 1px 4px rgba(0,0,0,0.5)`
+- Input padding: `14px 18px`
+
+**Interaction (GSAP)**:
+- Focus: `scale: 1.02`, ease `elastic.out(1, 0.6)`
+- Blur: `scale: 1`, ease `elastic.out(1, 0.5)`
+- Mouse down: `scale: 0.97`, ease `power2.out`
+- Mouse up: spring back to `1.02` (if focused) or `1`
+- Each keystroke: `scaleX: 1.006, scaleY: 0.997` → snap back in 0.25s
 
 ---
 
@@ -412,5 +552,8 @@ src/components/glass/
   DragDock.tsx           — Navigation dock
   SegmentControl.tsx     — Tab switcher
   FluidInput.tsx         — Recessed input with keystroke animation
+  GlassDropdown.tsx      — Dropdown select with frosted menu panel
+  GlassModal.tsx         — Full-screen modal with glass backdrop and panel
+  GlassFormField.tsx     — Labeled form input with glass styling
   LayeredFAB.tsx         — Expandable floating action button
 ```

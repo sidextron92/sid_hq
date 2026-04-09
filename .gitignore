@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Large assets (use low-res versions for git)
+public/wallpaper.jpg
+
 # dependencies
 /node_modules
 /.pnp
