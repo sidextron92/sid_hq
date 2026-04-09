@@ -5,10 +5,11 @@ import LiquidGlassWrap from "./LiquidGlassWrap";
 import gsap from "gsap";
 
 interface GlassFormFieldProps {
-  label: string;
+  label?: string;
   placeholder?: string;
   value?: string;
   onChange?: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   type?: string;
   className?: string;
 }
@@ -18,6 +19,7 @@ export default function GlassFormField({
   placeholder = "",
   value,
   onChange,
+  onKeyDown,
   type = "text",
   className = "",
 }: GlassFormFieldProps) {
@@ -91,12 +93,14 @@ export default function GlassFormField({
 
   return (
     <div className={className}>
-      <label
-        className="block text-xs font-bold uppercase tracking-widest mb-2"
-        style={{ color: "var(--text-muted, #8a8a98)" }}
-      >
-        {label}
-      </label>
+      {label && (
+        <label
+          className="block text-xs font-bold uppercase tracking-widest mb-2"
+          style={{ color: "var(--text-muted, #8a8a98)" }}
+        >
+          {label}
+        </label>
+      )}
       <div
         ref={wrapperRef}
         style={{ willChange: "transform" }}
@@ -121,7 +125,10 @@ export default function GlassFormField({
             onChange={handleChange}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e) => {
+              handleKeyDown();
+              onKeyDown?.(e);
+            }}
             className="w-full bg-transparent outline-none border-0 select-text"
             style={{
               fontSize: 15,
