@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-void: #09090b;
+  --bg-card: #141419;
+  --text-main: #fcfcfd;
+  --text-muted: #8a8a98;
+  --accent-border: rgba(255, 255, 255, 0.06);
+  --accent-glow: rgba(255, 255, 255, 0.03);
+
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-hover: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-bright: rgba(255, 255, 255, 0.25);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --glass-shadow-elevated: 0 20px 40px rgba(0, 0, 0, 0.6);
+  --glass-inset: inset 0 2px 4px rgba(255, 255, 255, 0.15);
+  --glass-inset-deep: inset 0 4px 10px rgba(0, 0, 0, 0.5);
+  --glass-radius: 24px;
+  --glass-radius-pill: 100px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-void);
+  --color-foreground: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-card: var(--bg-card);
+  --font-sans: var(--font-nunito);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-void);
+  color: var(--text-main);
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Glass surface base styles */
+.glass-surface {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-inset);
+}
+
+.glass-surface-recessed {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-inset-deep);
+}
+
+/* Ambient orb for glass refraction backgrounds */
+/* Input placeholder styling */
+input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.4;
+  pointer-events: none;
 }
