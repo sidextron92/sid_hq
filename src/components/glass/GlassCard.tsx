@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useEffect, useState, useId } from "react";
 import LiquidGlassWrap from "./LiquidGlassWrap";
+import { generateGlassMaps, type GlassMapResult } from "./glass-map-generator";
 import gsap from "gsap";
 
 interface GlassCardProps {
@@ -11,6 +12,44 @@ interface GlassCardProps {
   cornerRadius?: number;
   padding?: string;
   style?: React.CSSProperties;
+  /**
+   * Enable true optical refraction via the clone technique.
+   * When enabled, `renderScene` MUST be provided — the scene is cloned inside
+   * the card and filtered through a physics-based displacement map.
+   */
+  refractive?: boolean;
+  /**
+   * Render function returning the background scene JSX to refract.
+   * This should match whatever is behind the card on the page (e.g. wallpaper,
+   * grid pattern, ambient orbs). Only used when `refractive` is true.
+   */
+  renderScene?: () => React.ReactNode;
+  /**
+   * Dimensions of the scene to clone (defaults to viewport).
+   * Use when the scene is smaller than the viewport (e.g. a bounded demo area).
+   */
+  sceneSize?: { width: number; height: number };
+  /**
+   * Ref to the actual scene container on the page. When provided, the clone
+   * matches the real scene's bounding rect exactly (size + position), so any
+   * layout/sizing/position differences are eliminated. Preferred over
+   * `sceneSize` when the page has scrollable content or a non-viewport-sized
+   * scene container.
+   */
+  sceneRef?: React.RefObject<HTMLElement | null>;
+  /**
+   * Ref to a DOM element whose FULL subtree should be cloned and refracted
+   * through the card. Use this to refract not just the background scene but
+   * also foreground content (text, other components) that sits behind the card.
+   *
+   * The clone uses `Node.cloneNode(true)` + a `MutationObserver` to stay
+   * in sync. Any element marked with `data-refraction-ignore="true"` (including
+   * the card itself automatically) is stripped from the cloned tree to prevent
+   * recursive self-cloning.
+   *
+   * When provided, this supersedes `renderScene`.
+   */
+  captureRef?: React.RefObject<HTMLElement | null>;
 }
 
 export default function GlassCard({
@@ -20,9 +59,150 @@ export default function GlassCard({
   cornerRadius = 24,
   padding = "24px 28px",
   style,
+  refractive = false,
+  renderScene,
+  sceneSize,
+  sceneRef,
+  captureRef,
 }: GlassCardProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const cloneInnerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [maps, setMaps] = useState<GlassMapResult | null>(null);
   const dragState = useRef({ isDragging: false, lastX: 0, lastY: 0 });
+
+  const id = useId().replace(/:/g, "");
+  const filterId = `card-${id}`;
+
+  // Measure card size and generate displacement maps
+  useEffect(() => {
+    if (!refractive || !cardRef.current) return;
+    const measure = () => {
+      if (!cardRef.current) return;
+      const rect = cardRef.current.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(cardRef.current);
+    return () => ro.disconnect();
+  }, [refractive]);
+
+  // Generate physics-based maps when size is known
+  useEffect(() => {
+    if (!refractive || size.w === 0 || size.h === 0) return;
+    setMaps(
+      generateGlassMaps({
+        width: size.w,
+        height: size.h,
+        radius: cornerRadius,
+        bezelWidth: Math.min(24, cornerRadius),
+        glassThickness: 100,
+        refractiveIndex: 1.45,
+      })
+    );
+  }, [refractive, size.w, size.h, cornerRadius]);
+
+  // DOM capture: clone the captureRef element's subtree into cloneInnerRef.
+  // Strips any element marked data-refraction-ignore="true" (used to exclude
+  // the card itself to prevent recursive self-cloning).
+  const syncCapturedDom = useCallback(() => {
+    if (!captureRef?.current || !cloneInnerRef.current) return;
+    const snapshot = captureRef.current.cloneNode(true) as HTMLElement;
+    // Strip ignored elements
+    snapshot.querySelectorAll('[data-refraction-ignore="true"]').forEach((el) => el.remove());
+    // Replace the clone inner's children with the cloned subtree
+    cloneInnerRef.current.replaceChildren(snapshot);
+  }, [captureRef]);
+
+  // Initial capture + keep in sync via MutationObserver.
+  // We DO NOT observe `attributes` because GSAP sets `transform` on the
+  // wrapper during drag — that would trigger a re-clone on every frame and
+  // tank performance. We only re-clone when actual content changes
+  // (childList added/removed, text edited). Mutations inside elements marked
+  // `data-refraction-ignore="true"` (cards, their wrappers) are filtered out.
+  useEffect(() => {
+    if (!refractive || !captureRef?.current) return;
+    syncCapturedDom();
+
+    const isIgnored = (node: Node | null): boolean => {
+      let cur: Node | null = node;
+      while (cur) {
+        if (
+          cur instanceof HTMLElement &&
+          cur.dataset.refractionIgnore === "true"
+        ) {
+          return true;
+        }
+        cur = cur.parentNode;
+      }
+      return false;
+    };
+
+    let rafPending = false;
+    const observer = new MutationObserver((mutations) => {
+      // Ignore mutations that happen entirely inside refraction-ignored subtrees
+      const relevant = mutations.some((m) => !isIgnored(m.target));
+      if (!relevant || rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        syncCapturedDom();
+      });
+    });
+    observer.observe(captureRef.current, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      // attributes: false — intentional, see comment above
+    });
+    return () => observer.disconnect();
+  }, [refractive, captureRef, syncCapturedDom]);
+
+  // Keep clone inner aligned with the real scene's position & size.
+  // If a sceneRef is provided, we mirror its exact bounding rect (size +
+  // offset). Otherwise we fall back to viewport-sized positioning.
+  const updateClonePosition = useCallback(() => {
+    if (!cardRef.current || !cloneInnerRef.current) return;
+    const cardRect = cardRef.current.getBoundingClientRect();
+    // Prefer captureRef over sceneRef — captureRef represents the full content
+    // area whose DOM is cloned, so its rect defines the clone coordinate system.
+    const anchor = captureRef?.current ?? sceneRef?.current ?? null;
+    if (anchor) {
+      const anchorRect = anchor.getBoundingClientRect();
+      cloneInnerRef.current.style.width = `${anchorRect.width}px`;
+      cloneInnerRef.current.style.height = `${anchorRect.height}px`;
+      const offX = anchorRect.left - cardRect.left;
+      const offY = anchorRect.top - cardRect.top;
+      cloneInnerRef.current.style.transform = `translate(${offX}px, ${offY}px)`;
+    } else {
+      cloneInnerRef.current.style.transform = `translate(${-cardRect.left}px, ${-cardRect.top}px)`;
+    }
+  }, [sceneRef, captureRef]);
+
+  useEffect(() => {
+    if (!refractive) return;
+    updateClonePosition();
+    const onScroll = () => updateClonePosition();
+    const onResize = () => updateClonePosition();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    // ResizeObserver on the capture/scene anchor so we react to layout changes
+    const anchor = captureRef?.current ?? sceneRef?.current ?? null;
+    let ro: ResizeObserver | null = null;
+    if (anchor) {
+      ro = new ResizeObserver(() => updateClonePosition());
+      ro.observe(anchor);
+    }
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+    };
+  }, [refractive, updateClonePosition, captureRef, sceneRef]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -41,31 +221,215 @@ export default function GlassCard({
     gsap.set(wrapperRef.current, { x: `+=${dx}`, y: `+=${dy}` });
     dragState.current.lastX = e.clientX;
     dragState.current.lastY = e.clientY;
-  }, []);
+    // Keep the clone aligned with the card's new position during drag
+    if (refractive) updateClonePosition();
+  }, [refractive, updateClonePosition]);
 
   const handlePointerUp = useCallback(() => {
     if (!dragState.current.isDragging || !wrapperRef.current) return;
     dragState.current.isDragging = false;
-    gsap.to(wrapperRef.current, { scale: 1, duration: 0.5, ease: "elastic.out(1, 0.5)" });
-  }, []);
+    gsap.to(wrapperRef.current, {
+      scale: 1,
+      duration: 0.5,
+      ease: "elastic.out(1, 0.5)",
+      onUpdate: refractive ? updateClonePosition : undefined,
+    });
+  }, [refractive, updateClonePosition]);
+
+  // Non-refractive path — original implementation
+  if (!refractive) {
+    return (
+      <div
+        ref={wrapperRef}
+        className={draggable ? "cursor-grab active:cursor-grabbing select-none" : ""}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        style={{ touchAction: draggable ? "none" : undefined, willChange: "transform" }}
+      >
+        <LiquidGlassWrap
+          cornerRadius={cornerRadius}
+          padding={padding}
+          style={style}
+          className={className}
+        >
+          {children}
+        </LiquidGlassWrap>
+      </div>
+    );
+  }
+
+  // Refractive path — clone technique with physics-based displacement
+  const sceneW = sceneSize?.width ?? (typeof window !== "undefined" ? window.innerWidth : 1920);
+  const sceneH = sceneSize?.height ?? (typeof window !== "undefined" ? window.innerHeight : 1080);
 
   return (
     <div
       ref={wrapperRef}
+      data-refraction-ignore="true"
       className={draggable ? "cursor-grab active:cursor-grabbing select-none" : ""}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       style={{ touchAction: draggable ? "none" : undefined, willChange: "transform" }}
     >
-      <LiquidGlassWrap
-        cornerRadius={cornerRadius}
-        padding={padding}
-        style={style}
-        className={className}
+      <div
+        ref={cardRef}
+        className={`relative ${className}`}
+        style={{
+          borderRadius: cornerRadius,
+          padding,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+          overflow: "hidden",
+          ...style,
+        }}
       >
-        {children}
-      </LiquidGlassWrap>
+        {/* SVG Filter — physics-based displacement + specular */}
+        {maps && (
+          <svg
+            style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+            aria-hidden="true"
+          >
+            <defs>
+              <filter
+                id={filterId}
+                x="-50%"
+                y="-50%"
+                width="200%"
+                height="200%"
+                colorInterpolationFilters="sRGB"
+              >
+                <feGaussianBlur in="SourceGraphic" stdDeviation="0" result="blurred_source" />
+                <feImage
+                  x="0" y="0"
+                  width={size.w} height={size.h}
+                  result="displacement_map"
+                  href={maps.displacementMap}
+                  preserveAspectRatio="none"
+                />
+                <feDisplacementMap
+                  in="blurred_source"
+                  in2="displacement_map"
+                  scale={30}
+                  xChannelSelector="R"
+                  yChannelSelector="G"
+                  result="displaced"
+                />
+                <feColorMatrix in="displaced" type="saturate" values="4" result="displaced_saturated" />
+                <feImage
+                  x="0" y="0"
+                  width={size.w} height={size.h}
+                  result="specular_layer"
+                  href={maps.specularMap}
+                  preserveAspectRatio="none"
+                />
+                <feComposite
+                  in="displaced_saturated"
+                  in2="specular_layer"
+                  operator="in"
+                  result="specular_saturated"
+                />
+                <feComponentTransfer in="specular_layer" result="specular_faded">
+                  <feFuncA type="linear" slope="0.4" />
+                </feComponentTransfer>
+                <feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation" />
+                <feBlend in="specular_faded" in2="withSaturation" mode="normal" />
+              </filter>
+            </defs>
+          </svg>
+        )}
+
+        {/* Clone layer: the refracted scene (or full DOM capture) */}
+        {refractive && (renderScene || captureRef) && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              borderRadius: "inherit",
+              overflow: "hidden",
+              zIndex: 0,
+              filter: maps ? `url(#${filterId})` : undefined,
+            }}
+          >
+            <div
+              ref={cloneInnerRef}
+              className="absolute pointer-events-none"
+              style={{
+                top: 0,
+                left: 0,
+                width: sceneW,
+                height: sceneH,
+              }}
+            >
+              {/* When captureRef is provided, cloneInner's children are
+                  managed imperatively by the syncCapturedDom effect.
+                  Otherwise, renderScene provides the JSX. */}
+              {!captureRef && renderScene && renderScene()}
+            </div>
+          </div>
+        )}
+
+        {/* Glass surface overlay — subtle tint + border shines */}
+        <span
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            borderRadius: "inherit",
+            background: "rgba(255, 255, 255, 0.04)",
+            zIndex: 1,
+          }}
+        />
+
+        {/* Border shine (screen) */}
+        <span
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            borderRadius: "inherit",
+            mixBlendMode: "screen",
+            opacity: 0.25,
+            padding: "1.5px",
+            zIndex: 2,
+            WebkitMask:
+              "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+            boxShadow:
+              "0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(255,255,255,0.25) inset",
+            background:
+              "linear-gradient(135deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.15) 33%, rgba(255,255,255,0.45) 66%, rgba(255,255,255,0) 100%)",
+          }}
+        />
+
+        {/* Border shine (overlay) */}
+        <span
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            borderRadius: "inherit",
+            mixBlendMode: "overlay",
+            opacity: 0.9,
+            padding: "1.5px",
+            zIndex: 2,
+            WebkitMask:
+              "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+            boxShadow:
+              "0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(255,255,255,0.25) inset",
+            background:
+              "linear-gradient(135deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.35) 33%, rgba(255,255,255,0.65) 66%, rgba(255,255,255,0) 100%)",
+          }}
+        />
+
+        {/* Content */}
+        <div
+          className="relative"
+          style={{
+            color: "white",
+            textShadow: "0px 2px 12px rgba(0,0,0,0.4)",
+            zIndex: 3,
+          }}
+        >
+          {children}
+        </div>
+      </div>
     </div>
   );
 }

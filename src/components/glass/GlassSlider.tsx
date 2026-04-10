@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback, useId } from "react";
-import { DISPLACEMENT_MAP } from "./displacement-map";
+import { generateGlassMaps, type GlassMapResult } from "./glass-map-generator";
 import gsap from "gsap";
 
 interface GlassSliderProps {
@@ -40,13 +40,11 @@ const TRACK_R = TRACK_H / 2;
 const THUMB_W = 56;
 const THUMB_H = 44;
 const THUMB_RX = THUMB_H / 2;
-// Account for visual thumb width at rest scale so it reaches both edges
 const THUMB_VISUAL_W = THUMB_W * SCALE_REST;
 const THUMB_OFFSET = (THUMB_W - THUMB_VISUAL_W) / 2;
 const TRAVEL = TRACK_W - THUMB_VISUAL_W;
 
 const FILL_COLOR = "rgba(48, 130, 246, 0.85)";
-const FILL_COLOR_GLASS = "rgba(48, 130, 246, 0.25)";
 
 export default function GlassSlider({
   value,
@@ -64,8 +62,21 @@ export default function GlassSlider({
 }: GlassSliderProps) {
   const id = useId().replace(/:/g, "");
   const thumbFilterId = `slider-thumb-${id}`;
-  const fillFilterId = `slider-fill-${id}`;
-  const unfillFilterId = `slider-unfill-${id}`;
+
+  // Generate physics-based displacement + specular maps at mount
+  const [thumbMaps, setThumbMaps] = useState<GlassMapResult | null>(null);
+  useEffect(() => {
+    setThumbMaps(
+      generateGlassMaps({
+        width: THUMB_W,
+        height: THUMB_H,
+        radius: THUMB_RX,
+        bezelWidth: 16,
+        glassThickness: 80,
+        refractiveIndex: 1.45,
+      })
+    );
+  }, []);
 
   const initialValue = value ?? defaultValue ?? min;
   const [internalValue, setInternalValue] = useState(initialValue);
@@ -74,6 +85,8 @@ export default function GlassSlider({
   const trackRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   const thumbBgRef = useRef<HTMLDivElement>(null);
+  const cloneRef = useRef<HTMLDivElement>(null);
+  const cloneInnerRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLSpanElement>(null);
   const unfillRef = useRef<HTMLSpanElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
@@ -98,6 +111,42 @@ export default function GlassSlider({
 
   const halfThumb = THUMB_VISUAL_W / 2;
 
+  // Update clone inner position to align with the real track.
+  // The clone recreates the track scene inside the thumb. We need to offset
+  // it so the cloned track/fill lines up pixel-perfectly with the real ones.
+  //
+  // The thumb element is positioned via GSAP x=thumbX, has marginLeft=-THUMB_OFFSET,
+  // and is scaled from center. At scale S, the visible left edge of the thumb
+  // (relative to the track container) is:
+  //   thumbX - THUMB_OFFSET + THUMB_W * (1-S) / 2
+  //
+  // Inside the thumb, coordinates are in "unscaled" space. To make the clone's
+  // track content appear at the right place, we translate the clone inner by
+  // the negative of the thumb's visual offset, divided by the current scale
+  // (since the transform is applied pre-scale).
+  const updateClone = useCallback((thumbX: number, fillWidth: number) => {
+    if (!cloneInnerRef.current) return;
+    // thumbX is the left edge offset from track left.
+    // marginLeft shifts it by -THUMB_OFFSET.
+    // The clone is inside the thumb at full (unscaled) coordinates.
+    // We just need: where does the thumb's left edge sit relative to track?
+    // thumb left in track = thumbX - THUMB_OFFSET (in unscaled coords).
+    // Clone inner left=0 maps to thumb left, so to show track content
+    // starting from the right position, translate clone by -(thumbX - THUMB_OFFSET).
+    const tx = -(thumbX - THUMB_OFFSET);
+    // Vertical: the track center is at TRACK_H/2 from track top.
+    // The thumb center is at TRACK_H/2 from track top (CSS top: TRACK_H/2, translateY(-50%)).
+    // So the thumb's top edge (unscaled) is at TRACK_H/2 - THUMB_H/2 from track top.
+    // Inside the clone, y=0 is the thumb's top. The track top is at:
+    //   (TRACK_H/2 - THUMB_H/2) negated = THUMB_H/2 - TRACK_H/2 below clone origin.
+    // But we place cloned track at y=(THUMB_H-TRACK_H)/2 inside the clone inner,
+    // and the clone inner starts at y=0 of the thumb. We need no vertical offset
+    // because the track is already placed at the correct internal position.
+    cloneInnerRef.current.style.transform = `translate(${tx}px, 0px)`;
+    // fillWidth is in pixels — matches the real fill span width
+    cloneInnerRef.current.style.setProperty("--fill-w", `${fillWidth}px`);
+  }, []);
+
   // Sync controlled value
   useEffect(() => {
     if (value === undefined) return;
@@ -112,7 +161,8 @@ export default function GlassSlider({
       gsap.to(unfillRef.current, { left: x + halfThumb, duration: 0.4, ease: "elastic.out(1, 0.65)" });
     if (labelRef.current)
       gsap.to(labelRef.current, { x: x + halfThumb, duration: 0.4, ease: "elastic.out(1, 0.65)" });
-  }, [value, valueToX, halfThumb]);
+    updateClone(x, x + halfThumb);
+  }, [value, valueToX, halfThumb, updateClone]);
 
   // Set initial position (no animation)
   useEffect(() => {
@@ -123,6 +173,9 @@ export default function GlassSlider({
     if (labelRef.current) gsap.set(labelRef.current, { x: x + halfThumb });
     if (thumbBgRef.current)
       gsap.set(thumbBgRef.current, { backgroundColor: "rgba(255, 255, 255, 1)" });
+    if (cloneRef.current)
+      gsap.set(cloneRef.current, { opacity: 0 });
+    updateClone(x, x + halfThumb);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -154,7 +207,6 @@ export default function GlassSlider({
       isPressing.current = true;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-      // Calculate click position relative to track
       const rect = trackRef.current?.getBoundingClientRect();
       if (!rect) return;
       const clickX = e.clientX - rect.left - halfThumb;
@@ -162,9 +214,10 @@ export default function GlassSlider({
       const clickedValue = xToValue(clampedClick);
       const snappedX = valueToX(clickedValue);
 
-      // Jump thumb to clicked position
       commitValue(clickedValue);
       updatePositions(snappedX, true);
+      updateClone(snappedX, snappedX + halfThumb);
+
       if (labelRef.current) {
         labelRef.current.textContent =
           formatLabel?.(clickedValue) ?? String(clickedValue);
@@ -173,7 +226,7 @@ export default function GlassSlider({
       dragStartX.current = e.clientX;
       dragStartValue.current = clickedValue;
 
-      // Thumb press: expand to glass mode (like TactileSwitch)
+      // Thumb press: expand to glass mode
       if (thumbRef.current) {
         gsap.to(thumbRef.current, {
           scale: SCALE_GLASS,
@@ -181,9 +234,17 @@ export default function GlassSlider({
           ease: "back.out(1.4)",
         });
       }
+      // Fade thumb bg to transparent, show clone
       if (thumbBgRef.current) {
         gsap.to(thumbBgRef.current, {
-          backgroundColor: "rgba(255, 255, 255, 0.1)",
+          backgroundColor: "rgba(255, 255, 255, 0)",
+          duration: 0.25,
+          ease: "power2.out",
+        });
+      }
+      if (cloneRef.current) {
+        gsap.to(cloneRef.current, {
+          opacity: 0.9,
           duration: 0.25,
           ease: "power2.out",
         });
@@ -198,7 +259,7 @@ export default function GlassSlider({
         });
       }
     },
-    [disabled, xToValue, valueToX, commitValue, updatePositions, formatLabel, halfThumb]
+    [disabled, xToValue, valueToX, commitValue, updatePositions, formatLabel, halfThumb, updateClone]
   );
 
   const handlePointerMove = useCallback(
@@ -210,29 +271,27 @@ export default function GlassSlider({
       const rawX = baseX + dx;
       const clampedX = Math.max(0, Math.min(TRAVEL, rawX));
 
-      // Free drag — move thumb to raw position, don't snap yet
       if (thumbRef.current) gsap.set(thumbRef.current, { x: clampedX });
       if (fillRef.current) gsap.set(fillRef.current, { width: clampedX + halfThumb });
       if (unfillRef.current) gsap.set(unfillRef.current, { left: clampedX + halfThumb });
       if (labelRef.current) gsap.set(labelRef.current, { x: clampedX + halfThumb });
 
-      // Track the closest snapped value for label display
       const newValue = xToValue(clampedX);
       valueRef.current = newValue;
+      updateClone(clampedX, clampedX + halfThumb);
 
       if (labelRef.current) {
         labelRef.current.textContent =
           formatLabel?.(newValue) ?? String(newValue);
       }
     },
-    [valueToX, xToValue, formatLabel, halfThumb]
+    [valueToX, xToValue, formatLabel, halfThumb, updateClone]
   );
 
   const handlePointerUp = useCallback(() => {
     if (disabled || !isPressing.current) return;
     isPressing.current = false;
 
-    // Snap to nearest step on release
     const snappedValue = valueRef.current;
     const snappedX = valueToX(snappedValue);
     commitValue(snappedValue);
@@ -243,8 +302,9 @@ export default function GlassSlider({
     if (fillRef.current) gsap.to(fillRef.current, { width: snappedX + halfThumb, duration: 0.4, ease: "elastic.out(1, 0.6)" });
     if (unfillRef.current) gsap.to(unfillRef.current, { left: snappedX + halfThumb, duration: 0.4, ease: "elastic.out(1, 0.6)" });
     if (labelRef.current) gsap.to(labelRef.current, { x: snappedX + halfThumb, duration: 0.4, ease: "elastic.out(1, 0.6)" });
+    updateClone(snappedX, snappedX + halfThumb);
 
-    // Thumb release: shrink back to rest (like TactileSwitch)
+    // Thumb release: shrink back to rest
     if (thumbRef.current) {
       gsap.to(thumbRef.current, {
         scale: SCALE_REST,
@@ -252,9 +312,17 @@ export default function GlassSlider({
         ease: "elastic.out(1, 0.7)",
       });
     }
+    // Restore thumb bg, hide clone
     if (thumbBgRef.current) {
       gsap.to(thumbBgRef.current, {
         backgroundColor: "rgba(255, 255, 255, 1)",
+        duration: 0.35,
+        ease: "power2.out",
+      });
+    }
+    if (cloneRef.current) {
+      gsap.to(cloneRef.current, {
+        opacity: 0,
         duration: 0.35,
         ease: "power2.out",
       });
@@ -268,7 +336,7 @@ export default function GlassSlider({
         ease: "power2.out",
       });
     }
-  }, [disabled, commitValue]);
+  }, [disabled, commitValue, onChange, valueToX, halfThumb, updateClone]);
 
   const displayValue = formatLabel?.(internalValue) ?? String(internalValue);
 
@@ -280,121 +348,79 @@ export default function GlassSlider({
         transformOrigin: "center center",
       }}
     >
-      {/* SVG Filters */}
-      <svg
-        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
-        aria-hidden="true"
-      >
-        <defs>
-          {/* Thumb displacement (same as TactileSwitch) */}
-          <filter
-            id={thumbFilterId}
-            x="-35%"
-            y="-35%"
-            width="170%"
-            height="170%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation="0.2"
-              result="blurred_source"
-            />
-            <feImage
-              x="0" y="0" width="100%" height="100%"
-              result="displacement_map"
-              href={DISPLACEMENT_MAP}
-              preserveAspectRatio="xMidYMid slice"
-            />
-            <feDisplacementMap
-              in="blurred_source"
-              in2="displacement_map"
-              scale={35}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="displaced"
-            />
-            <feColorMatrix
-              in="displaced"
-              type="saturate"
-              values="6"
-              result="displaced_saturated"
-            />
-          </filter>
-
-          {/* Filled region — light refraction ("clear glass") */}
-          <filter
-            id={fillFilterId}
-            x="-20%"
-            y="-20%"
-            width="140%"
-            height="140%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation="0.3"
-              result="blurred_source"
-            />
-            <feImage
-              x="0" y="0" width="100%" height="100%"
-              result="displacement_map"
-              href={DISPLACEMENT_MAP}
-              preserveAspectRatio="xMidYMid slice"
-            />
-            <feDisplacementMap
-              in="blurred_source"
-              in2="displacement_map"
-              scale={15}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="displaced"
-            />
-            <feColorMatrix
-              in="displaced"
-              type="saturate"
-              values="3"
-              result="displaced_saturated"
-            />
-          </filter>
-
-          {/* Unfilled region — heavy refraction ("frosted glass") */}
-          <filter
-            id={unfillFilterId}
-            x="-35%"
-            y="-35%"
-            width="170%"
-            height="170%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation="1.2"
-              result="blurred_source"
-            />
-            <feImage
-              x="0" y="0" width="100%" height="100%"
-              result="displacement_map"
-              href={DISPLACEMENT_MAP}
-              preserveAspectRatio="xMidYMid slice"
-            />
-            <feDisplacementMap
-              in="blurred_source"
-              in2="displacement_map"
-              scale={50}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="displaced"
-            />
-            <feColorMatrix
-              in="displaced"
-              type="saturate"
-              values="6"
-              result="displaced_saturated"
-            />
-          </filter>
-        </defs>
-      </svg>
+      {/* SVG Filter — physics-based displacement + specular */}
+      {thumbMaps && (
+        <svg
+          style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+          aria-hidden="true"
+        >
+          <defs>
+            <filter
+              id={thumbFilterId}
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feGaussianBlur
+                in="SourceGraphic"
+                stdDeviation="0"
+                result="blurred_source"
+              />
+              <feImage
+                x="0" y="0"
+                width={THUMB_W} height={THUMB_H}
+                result="displacement_map"
+                href={thumbMaps.displacementMap}
+                preserveAspectRatio="none"
+              />
+              <feDisplacementMap
+                in="blurred_source"
+                in2="displacement_map"
+                scale={30}
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="displaced"
+              />
+              <feColorMatrix
+                in="displaced"
+                type="saturate"
+                values="7"
+                result="displaced_saturated"
+              />
+              {/* Specular highlight layer */}
+              <feImage
+                x="0" y="0"
+                width={THUMB_W} height={THUMB_H}
+                result="specular_layer"
+                href={thumbMaps.specularMap}
+                preserveAspectRatio="none"
+              />
+              <feComposite
+                in="displaced_saturated"
+                in2="specular_layer"
+                operator="in"
+                result="specular_saturated"
+              />
+              <feComponentTransfer in="specular_layer" result="specular_faded">
+                <feFuncA type="linear" slope="0.4" />
+              </feComponentTransfer>
+              <feBlend
+                in="specular_saturated"
+                in2="displaced"
+                mode="normal"
+                result="withSaturation"
+              />
+              <feBlend
+                in="specular_faded"
+                in2="withSaturation"
+                mode="normal"
+              />
+            </filter>
+          </defs>
+        </svg>
+      )}
 
       {/* Track */}
       <div
@@ -413,7 +439,7 @@ export default function GlassSlider({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
-        {/* Filled region — blue glass with convex specular */}
+        {/* Filled region — blue glass */}
         <span
           ref={fillRef}
           className="absolute top-0 left-0 pointer-events-none"
@@ -421,8 +447,6 @@ export default function GlassSlider({
             height: TRACK_H,
             borderRadius: TRACK_R,
             overflow: "hidden",
-            backdropFilter: `url(#${fillFilterId}) blur(2px) saturate(120%)`,
-            WebkitBackdropFilter: `url(#${fillFilterId}) blur(2px) saturate(120%)`,
             backgroundColor: FILL_COLOR,
           }}
         >
@@ -437,7 +461,7 @@ export default function GlassSlider({
           />
         </span>
 
-        {/* Unfilled region — frosted refractive glass */}
+        {/* Unfilled region — frosted glass */}
         <span
           ref={unfillRef}
           className="absolute top-0 pointer-events-none"
@@ -446,9 +470,8 @@ export default function GlassSlider({
             height: TRACK_H,
             borderRadius: TRACK_R,
             overflow: "hidden",
-            backdropFilter: `url(#${unfillFilterId}) blur(8px) saturate(160%)`,
-            WebkitBackdropFilter: `url(#${unfillFilterId}) blur(8px) saturate(160%)`,
-            backgroundColor: "rgba(148, 148, 159, 0.25)",
+            backgroundColor: "rgba(148, 148, 159, 0.35)",
+            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
           }}
         />
 
@@ -490,7 +513,7 @@ export default function GlassSlider({
           }}
         />
 
-        {/* Thumb — pill shape like TactileSwitch */}
+        {/* Thumb */}
         <div
           ref={thumbRef}
           className="absolute select-none pointer-events-none"
@@ -504,17 +527,75 @@ export default function GlassSlider({
             willChange: "transform",
             overflow: "hidden",
             zIndex: 2,
+            boxShadow: "0 3px 14px rgba(0,0,0,0.3)",
           }}
         >
-          {/* Backdrop warp layer */}
-          <span
-            className="absolute inset-0"
+          {/*
+            Clone layer: recreates the track scene inside the thumb,
+            then applies filter: url(#glassFilter) for real refraction.
+            This is the kube.io technique — more reliable than backdrop-filter
+            with SVG displacement which only works in Chrome.
+          */}
+          <div
+            ref={cloneRef}
+            className="absolute inset-0 pointer-events-none"
             style={{
-              borderRadius: THUMB_RX,
-              backdropFilter: `url(#${thumbFilterId})`,
-              WebkitBackdropFilter: `url(#${thumbFilterId})`,
+              borderRadius: "inherit",
+              overflow: "hidden",
+              zIndex: 1,
+              opacity: 0,
+              willChange: "opacity",
+              filter: `url(#${thumbFilterId})`,
             }}
-          />
+          >
+            <div
+              ref={cloneInnerRef}
+              className="absolute pointer-events-none"
+              style={{
+                top: 0,
+                left: 0,
+                width: TRACK_W,
+                height: THUMB_H,
+              }}
+            >
+              {/* Cloned track background (semi-transparent — lets page bg show through) */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: (THUMB_H - TRACK_H) / 2,
+                  width: TRACK_W,
+                  height: TRACK_H,
+                  borderRadius: TRACK_R,
+                  backgroundColor: "rgba(0, 0, 0, 0.15)",
+                }}
+              />
+              {/* Cloned fill — width matches real fill in pixels */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: (THUMB_H - TRACK_H) / 2,
+                  width: "var(--fill-w, 160px)" as string,
+                  height: TRACK_H,
+                  borderRadius: TRACK_R,
+                  backgroundColor: FILL_COLOR,
+                }}
+              />
+              {/* Cloned unfilled — starts where fill ends */}
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: (THUMB_H - TRACK_H) / 2,
+                  left: "var(--fill-w, 160px)" as string,
+                  height: TRACK_H,
+                  borderRadius: TRACK_R,
+                  backgroundColor: "rgba(148, 148, 159, 0.35)",
+                }}
+              />
+            </div>
+          </div>
 
           {/* Thumb background (opaque at rest, transparent when pressed) */}
           <div
@@ -523,8 +604,7 @@ export default function GlassSlider({
             style={{
               borderRadius: THUMB_RX,
               backgroundColor: "rgba(255, 255, 255, 1)",
-              boxShadow:
-                "0 4px 22px rgba(0,0,0,0.1)",
+              zIndex: 2,
             }}
           />
 
@@ -536,6 +616,7 @@ export default function GlassSlider({
               mixBlendMode: "screen",
               opacity: 0.25,
               padding: "1.5px",
+              zIndex: 3,
               WebkitMask:
                 "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
               WebkitMaskComposite: "xor",
@@ -554,6 +635,7 @@ export default function GlassSlider({
               borderRadius: THUMB_RX,
               mixBlendMode: "overlay",
               padding: "1.5px",
+              zIndex: 3,
               WebkitMask:
                 "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
               WebkitMaskComposite: "xor",

@@ -459,8 +459,9 @@ Labeled form input field with liquid glass styling. Similar to FluidInput but de
 ### GlassSlider
 
 **File**: `GlassSlider.tsx`
+**Depends on**: `glass-map-generator.ts` (runtime physics-based displacement maps)
 
-Liquid glass range slider inspired by [kube.io](https://kube.io/blog/liquid-glass-css-svg/). The track has two distinct glass regions — a blue-tinted clear glass fill and a frosted refractive unfilled region. The thumb uses the same oversized pill shape and press-to-glass interaction as TactileSwitch. Supports free dragging with snap-to-step on release.
+Liquid glass range slider inspired by [kube.io](https://kube.io/blog/liquid-glass-css-svg/). Features **true optical refraction** through the thumb — when pressed, you see the track's blue fill and unfilled region physically bent through the glass surface using Snell's law displacement. Supports free dragging with snap-to-step on release.
 
 ```tsx
 // Basic continuous slider
@@ -472,50 +473,127 @@ Liquid glass range slider inspired by [kube.io](https://kube.io/blog/liquid-glas
 // Stepped (3 discrete positions, snaps on release)
 <GlassSlider min={0} max={2} step={1} showLabel formatLabel={(v) => ["Low", "Mid", "High"][v]} />
 
-// Custom label format
-<GlassSlider defaultValue={25} step={5} showLabel formatLabel={(v) => `${v}%`} />
-
 // Disabled
 <GlassSlider defaultValue={50} disabled />
 ```
 
-**Props**: `value`, `defaultValue`, `onChange`, `min` (default: `0`), `max` (default: `100`), `step` (default: `1`), `disabled`, `showLabel`, `formatLabel` (`(v: number) => string`), `className`, `scale`
+**Props**: `value`, `defaultValue`, `onChange`, `min` (default: `0`), `max` (default: `100`), `step` (default: `1`), `disabled`, `showLabel`, `formatLabel`, `stepLabels`, `className`, `scale`
 
 **Visual spec**:
-- Track: `320×16px`, fully rounded (`radius: 8px`)
-  - Background: `rgba(0, 0, 0, 0.15)`, `inset shadow: 0 2px 6px rgba(0,0,0,0.3)`
-  - Border shines: screen + overlay gradient masks (same xor technique as LiquidGlassWrap)
-- Filled region (left of thumb): blue glass `rgba(48, 130, 246, 0.85)`
-  - SVG displacement filter: `scale: 15`, `saturate: 3`, `blur: 0.3` (light refraction — background visible)
-  - `backdrop-filter: url(#fill-filter) blur(2px) saturate(120%)`
-  - Convex bezel specular overlay: `linear-gradient(180deg, rgba(255,255,255,0.30) 0%, ... rgba(0,0,0,0.08) 100%)`
-- Unfilled region (right of thumb): frosted glass `rgba(148, 148, 159, 0.25)`
-  - SVG displacement filter: `scale: 50`, `saturate: 6`, `blur: 1.2` (heavy distortion)
-  - `backdrop-filter: url(#unfill-filter) blur(8px) saturate(160%)`
-- Thumb: `56×44px` pill (`radius: 22px`) — oversized relative to track (same shape as TactileSwitch)
-  - At rest: `scale(0.65)`, opaque white `rgba(255,255,255,1)`, `shadow: 0 4px 22px rgba(0,0,0,0.1)`
-  - Pressed/glass mode: `scale(0.9)`, transparent `rgba(255,255,255,0.1)` — track shows through glass
-  - SVG displacement filter: `scale: 35`, `saturate: 6` (same as TactileSwitch thumb)
-  - Border shines: screen + overlay gradient masks
-  - Travel distance accounts for visual width at rest scale (`56 × 0.65 = 36.4px`)
-- Label: floating `<span>` above thumb, `13px bold`, white with text-shadow. Appears on press, hides on release.
+- Track: `320×16px`, pill (`radius: 8px`), `bg: rgba(0,0,0,0.15)`, inset shadow, border shines
+- Filled region: blue `rgba(48, 130, 246, 0.85)` with a convex-bezel specular linear-gradient
+- Unfilled region: `rgba(148, 148, 159, 0.35)`, inset shadow
+- Thumb: `56×44px` pill (`radius: 22px`)
+  - At rest: `scale(0.65)`, opaque white `rgba(255,255,255,1)`, `shadow: 0 3px 14px rgba(0,0,0,0.3)`
+  - Pressed: `scale(0.9)`, thumb bg fades to `rgba(255,255,255,0)` (fully transparent)
+  - Travel accounts for visual width at rest scale (`56 × 0.65 = 36.4px`)
+- Label: floating `<span>` above thumb, fades in on press
 
-**3 SVG filters** (single `<svg>` with `<defs>`, unique IDs via `useId()`):
-1. `slider-thumb-{id}` — displacement 35, blur 0.2, saturate 6
-2. `slider-fill-{id}` — displacement 15, blur 0.3, saturate 3
-3. `slider-unfill-{id}` — displacement 50, blur 1.2, saturate 6
+---
+
+#### How Refraction Is Achieved
+
+This is the most technically involved component in the library. It uses a **cloning technique** (not `backdrop-filter`) to achieve real refraction that works cross-browser.
+
+##### Why not `backdrop-filter: url(#svgFilter)`?
+
+Our earlier components (TactileSwitch, LiquidGlassWrap) use a generic pre-baked displacement map (`DISPLACEMENT_MAP` base64 JPEG) applied via `backdrop-filter: url(#filter)`. This approach has two problems:
+
+1. **Browser support is fragile.** `backdrop-filter: url(#svg)` with displacement is only reliable in some Chrome builds. It silently renders as transparent in many environments. You often get the frosted blur but **no actual pixel refraction** — the content behind doesn't appear bent.
+2. **The generic squircle map doesn't match arbitrary shapes.** A single pre-baked image can't adapt to different corner radii, bezel widths, or aspect ratios.
+
+##### The Clone Technique (ported from kube.io)
+
+Instead of filtering the backdrop, the slider **recreates the scene behind the thumb** inside the thumb itself, then applies `filter: url(#glassFilter)` as a regular CSS filter (which always works). The steps:
+
+1. **Clone DOM layer** (`cloneRef`) lives inside the thumb, absolutely positioned, `filter: url(#thumb-filter)`, `opacity: 0` at rest.
+2. **Clone inner** (`cloneInnerRef`) is a wide container (`TRACK_W × THUMB_H`) that holds re-rendered copies of:
+   - Track background `rgba(0,0,0,0.15)`
+   - Blue fill — width synced to real fill via CSS variable `--fill-w`
+   - Unfilled region — `left` starts where fill ends
+3. **Alignment transform**: as the thumb moves, `cloneInnerRef.style.transform = translate(${-(thumbX - THUMB_OFFSET)}px, 0)` shifts the clone content so it lines up pixel-perfectly with the real track behind the thumb.
+4. **On press**, GSAP fades `cloneRef` opacity from `0 → 0.9` and thumb bg from `rgba(255,255,255,1) → rgba(255,255,255,0)`. The now-transparent thumb reveals the cloned scene, filtered through the glass displacement.
+5. **On release**, the opacity animations reverse. Thumb becomes opaque white again.
+
+##### Physics-Based Displacement Map Generation
+
+`glass-map-generator.ts` generates the displacement map at runtime — not a pre-baked image. Key functions:
+
+```typescript
+generateGlassMaps({
+  width: 56,              // thumb width
+  height: 44,             // thumb height
+  radius: 22,             // corner radius
+  bezelWidth: 16,         // width of the refractive ring
+  glassThickness: 80,     // optical thickness
+  refractiveIndex: 1.45,  // glass IOR
+})
+// Returns: { displacementMap, specularMap, maxDisplacement }
+```
+
+The generator uses Snell's law ray tracing over a convex squircle surface `y = (1 - (1-x)^4)^(1/4)`:
+
+1. **`calculateDisplacementMap1D`** — For 128 samples along the bezel radius, computes the surface normal via finite-difference derivative of the squircle profile, then applies `k = 1 - η²(1 - cosθ²)` (Snell's law) to get the refracted ray direction. The horizontal exit offset at the glass boundary is the displacement magnitude.
+2. **`calculateDisplacementMap2D`** — Maps the 1D profile radially around a rounded rectangle. For each pixel inside the bezel ring, it looks up the 1D profile at the appropriate bezel depth and encodes the `(dX, dY)` vector as RGB values (`R = 128 + dX·127`, `G = 128 + dY·127`, 128 being neutral).
+3. **`calculateSpecularHighlight`** — Generates a second `ImageData` containing a physically-motivated specular highlight based on a dot product with a fixed light direction (60°) and the surface curvature falloff.
+4. Both `ImageData` objects are serialized to data URLs via `canvas.toDataURL()`.
+
+##### The Composite SVG Filter
+
+The generated displacement and specular maps are fed into a single SVG filter on the slider thumb. This filter chain produces both the warped refraction and the glossy specular:
+
+```xml
+<filter id="slider-thumb-{id}">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="0" result="blurred_source" />
+
+  <!-- Runtime-generated physics-based displacement map -->
+  <feImage href="{displacementMap}" result="displacement_map" preserveAspectRatio="none" />
+
+  <!-- Warp the source (the cloned track scene) using the map -->
+  <feDisplacementMap in="blurred_source" in2="displacement_map"
+                     scale="30" xChannelSelector="R" yChannelSelector="G"
+                     result="displaced" />
+
+  <!-- Color punch -->
+  <feColorMatrix in="displaced" type="saturate" values="7" result="displaced_saturated" />
+
+  <!-- Specular highlight -->
+  <feImage href="{specularMap}" result="specular_layer" preserveAspectRatio="none" />
+  <feComposite in="displaced_saturated" in2="specular_layer" operator="in" result="specular_saturated" />
+  <feComponentTransfer in="specular_layer" result="specular_faded">
+    <feFuncA type="linear" slope="0.4" />
+  </feComponentTransfer>
+  <feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation" />
+  <feBlend in="specular_faded" in2="withSaturation" mode="normal" />
+</filter>
+```
+
+Applied as `filter: url(#slider-thumb-{id})` (regular CSS filter, **not** `backdrop-filter`) to the clone layer. The filter operates on the clone's own DOM content, so it's deterministic — no browser dependence on `backdrop-filter` SVG URL support.
+
+##### Summary Comparison
+
+| Approach | Used by | Works in all browsers? | Real refraction? |
+|---|---|---|---|
+| `backdrop-filter: url(#svg)` + generic squircle map | LiquidGlassWrap, TactileSwitch thumb | Chrome-only, fragile | Partial (often missing) |
+| Clone + physics-based runtime map + `filter: url(#svg)` | GlassSlider | Yes (regular CSS filter) | Yes, pixel-accurate |
+
+The clone approach is more reliable but heavier (DOM duplication + runtime ImageData generation). Use it when real refraction is critical; use the backdrop-filter approach for smaller accents where a frosted look is acceptable.
+
+---
 
 **Interaction model**:
 
-1. **Click on track**: thumb jumps to clicked position with elastic spring animation
-2. **Drag**: press → thumb expands to glass mode → free drag (thumb follows cursor exactly, no step snapping during drag) → release → snaps to nearest step with elastic spring → thumb shrinks back to solid
-3. **Stepped mode** (`step > 1` relative to range): drag freely, snap to closest discrete position on release — like TactileSwitch snapping to closest side
+1. **Click on track**: thumb jumps to clicked position with elastic spring
+2. **Drag**: press → thumb expands to glass mode, clone fades in, bg fades to transparent → free drag (thumb follows cursor exactly, no step snapping during drag) → release → snaps to nearest step with elastic spring → thumb bg restores, clone fades out
+3. **Stepped mode**: drag freely, snap to closest discrete position on release
 
 **GSAP animations**:
 - Press expand: `scale → 0.9`, ease `back.out(1.4)`, 0.3s
-- Press bg fade: `rgba(255,255,255,1) → 0.1`, ease `power2.out`, 0.25s
+- Press bg fade: `rgba(255,255,255,1) → rgba(255,255,255,0)`, ease `power2.out`, 0.25s
+- Press clone fade-in: `opacity → 0.9`, ease `power2.out`, 0.25s
 - Release shrink: `scale → 0.65`, ease `elastic.out(1, 0.7)`, 0.5s
-- Release bg restore: `rgba(255,255,255,0.1) → 1`, ease `power2.out`, 0.35s
+- Release bg restore: `rgba(255,255,255,0) → 1`, ease `power2.out`, 0.35s
+- Release clone fade-out: `opacity → 0`, ease `power2.out`, 0.35s
 - Snap to step (on release): `x → snappedX`, ease `elastic.out(1, 0.6)`, 0.4s
 - Track click jump: `x → targetX`, ease `elastic.out(1, 0.6)`, 0.5s
 - External value change: `x → newX`, ease `elastic.out(1, 0.65)`, 0.4s
@@ -621,6 +699,7 @@ src/components/glass/
   GlassDropdown.tsx      — Dropdown select with frosted menu panel
   GlassModal.tsx         — Full-screen modal with glass backdrop and panel
   GlassFormField.tsx     — Labeled form input with glass styling
-  GlassSlider.tsx        — Range slider with blue fill and snap-to-step
+  GlassSlider.tsx        — Range slider with real refraction (clone technique + physics maps)
+  glass-map-generator.ts — Runtime Snell's-law displacement + specular map generator
   LayeredFAB.tsx         — Expandable floating action button
 ```

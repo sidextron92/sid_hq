@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   GlassCard,
   GlassButton,
@@ -94,6 +94,87 @@ const fabActions = [
 
 type BgMode = "default" | "wallpaper" | "video";
 
+// Wallpaper scene: single background image covering the viewport.
+function renderWallpaperScene() {
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{
+        backgroundImage: "url('/wallpaper.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
+    />
+  );
+}
+
+// Video scene: the same background video. Note that the cloned video plays
+// independently of the real one, so frames may be slightly out of sync — fine
+// for a visual refraction effect.
+function renderVideoScene() {
+  return (
+    <video
+      className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+      src="/background.webm"
+      autoPlay
+      loop
+      muted
+      playsInline
+    />
+  );
+}
+
+// Default scene: grid pattern + ambient colored orbs.
+// Extracted so GlassCard's refractive clone can re-render the exact same scene.
+function renderDefaultScene() {
+  return (
+    <>
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundColor: "#09090b",
+          backgroundImage: `
+            repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(255,255,255,0.08) 59px, rgba(255,255,255,0.08) 60px),
+            repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(255,255,255,0.08) 59px, rgba(255,255,255,0.08) 60px)
+          `,
+        }}
+      />
+      <div
+        className="ambient-orb"
+        style={{
+          width: 400,
+          height: 400,
+          top: -100,
+          left: -100,
+          background: "radial-gradient(circle, #6366f1, transparent)",
+        }}
+      />
+      <div
+        className="ambient-orb"
+        style={{
+          width: 350,
+          height: 350,
+          bottom: 100,
+          right: -50,
+          background: "radial-gradient(circle, #ec4899, transparent)",
+        }}
+      />
+      <div
+        className="ambient-orb"
+        style={{
+          width: 300,
+          height: 300,
+          top: "40%",
+          left: "50%",
+          background: "radial-gradient(circle, #14b8a6, transparent)",
+          opacity: 0.25,
+        }}
+      />
+    </>
+  );
+}
+
 export default function UIComponents() {
   const [switchOn, setSwitchOn] = useState(false);
   const [segment, setSegment] = useState(0);
@@ -105,68 +186,24 @@ export default function UIComponents() {
   const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const captureRef = useRef<HTMLDivElement>(null);
+
+  // Pick the scene renderer matching the current background mode.
+  // The GlassCard's refractive clone re-renders this exact scene internally,
+  // offset to the card's viewport position, so the refraction stays aligned.
+  const renderScene =
+    bgMode === "default"
+      ? renderDefaultScene
+      : bgMode === "wallpaper"
+        ? renderWallpaperScene
+        : renderVideoScene;
 
   return (
     <>
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Wallpaper background */}
-      {bgMode === "wallpaper" && (
-        <div
-          className="absolute inset-0 z-0"
-          style={{
-            backgroundImage: "url('/wallpaper.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-      )}
-
-      {/* Video background */}
-      {bgMode === "video" && (
-        <video
-          className="absolute inset-0 z-0 w-full h-full object-cover"
-          src="/background.webm"
-          autoPlay
-          loop
-          muted
-          playsInline
-        />
-      )}
-
-      {/* Default background: grid + orbs */}
-      {bgMode === "default" && (
-        <>
-          <div className="absolute inset-0 pointer-events-none" style={{
-            backgroundImage: `
-              repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(255,255,255,0.08) 59px, rgba(255,255,255,0.08) 60px),
-              repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(255,255,255,0.08) 59px, rgba(255,255,255,0.08) 60px)
-            `,
-          }} />
-          <div
-            className="ambient-orb"
-            style={{
-              width: 400, height: 400, top: -100, left: -100,
-              background: "radial-gradient(circle, #6366f1, transparent)",
-            }}
-          />
-          <div
-            className="ambient-orb"
-            style={{
-              width: 350, height: 350, bottom: 100, right: -50,
-              background: "radial-gradient(circle, #ec4899, transparent)",
-            }}
-          />
-          <div
-            className="ambient-orb"
-            style={{
-              width: 300, height: 300, top: "40%", left: "50%",
-              background: "radial-gradient(circle, #14b8a6, transparent)",
-              opacity: 0.25,
-            }}
-          />
-        </>
-      )}
+    <div ref={captureRef} className="min-h-screen bg-background relative overflow-hidden">
+      {/* Scene (grid+orbs / wallpaper / video) — same function used by refractive cards */}
+      <div ref={sceneRef} className="absolute inset-0 z-0">{renderScene()}</div>
 
       {/* Header */}
       <header className="relative z-10 px-8 pt-12 pb-6 flex items-start justify-between">
@@ -193,7 +230,11 @@ export default function UIComponents() {
             <h2 className="text-sm font-bold text-muted uppercase tracking-widest mb-4">
               01 — Glass Card
             </h2>
-            <GlassCard draggable>
+            <GlassCard
+              draggable
+              refractive
+              captureRef={captureRef}
+            >
               <h3 className="text-lg font-black mb-1">Draggable Card</h3>
               <p className="text-sm text-muted">
                 Grab and drag me. I&apos;ll stretch with velocity and snap back with spring physics.
@@ -206,7 +247,11 @@ export default function UIComponents() {
             <h2 className="text-sm font-bold text-muted uppercase tracking-widest mb-4">
               02 — Static Card
             </h2>
-            <GlassCard cornerRadius={16}>
+            <GlassCard
+              cornerRadius={16}
+              refractive
+              captureRef={captureRef}
+            >
               <h3 className="text-lg font-black mb-1">Info Panel</h3>
               <p className="text-sm text-muted">
                 A non-draggable glass card for content display. The liquid refraction responds to mouse movement.
