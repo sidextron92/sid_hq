@@ -59,18 +59,7 @@ function getTagColor(tag: string): string {
   return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
 }
 
-// ─── Drag info ──────────────────────────────────────
-interface DragInfo {
-  task: Task;
-  sourceColumn: string;
-  offsetX: number;
-  offsetY: number;
-  width: number;
-  startX: number;
-  startY: number;
-}
-
-// ─── Task card (shared between inline & floating) ───
+// ─── Task card content ──────────────────────────────
 function TaskCardContent({ task }: { task: Task }) {
   return (
     <>
@@ -103,78 +92,116 @@ export default function Home() {
   const [newTagInput, setNewTagInput] = useState("");
   const [newTags, setNewTags] = useState<string[]>([]);
 
-  // Drag state
-  const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
+  // Drag state — only the dragged task id is in React state (for drop indicators)
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     column: string;
     index: number;
   } | null>(null);
 
   // Refs
-  const dragCardRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Mirror state in refs for stable event handlers
+  // Mutable drag state (avoids re-renders on every pixel)
+  const dragRef = useRef<{
+    taskId: string;
+    task: Task;
+    sourceColumn: string;
+    el: HTMLElement;
+    placeholder: HTMLElement;
+    originalParent: HTMLElement;
+    originalNext: Node | null;
+    startRect: DOMRect;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+
+  // Mirror state in refs for event handlers
   const boardRef = useRef(board);
-  const dragInfoRef = useRef(dragInfo);
   const dropTargetRef = useRef(dropTarget);
   boardRef.current = board;
-  dragInfoRef.current = dragInfo;
   dropTargetRef.current = dropTarget;
 
   // FLIP animation refs
   const animCardId = useRef<string | null>(null);
-  const floatingPos = useRef<{ x: number; y: number } | null>(null);
+  const preDropRect = useRef<{ x: number; y: number } | null>(null);
 
   // ─── Start drag ─────────────────────────────────
   const handleCardPointerDown = useCallback(
     (e: React.PointerEvent, task: Task, column: string) => {
       e.preventDefault();
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const el = e.currentTarget as HTMLElement;
+      const rect = el.getBoundingClientRect();
 
-      setDragInfo({
+      // Capture pointer on the element for reliable tracking
+      el.setPointerCapture(e.pointerId);
+
+      dragRef.current = {
+        taskId: task.id,
         task,
         sourceColumn: column,
+        el,
+        placeholder: null!, // set after creation below
+        originalParent: null!,
+        originalNext: null,
+        startRect: rect,
         offsetX: e.clientX - rect.left,
         offsetY: e.clientY - rect.top,
-        width: rect.width,
-        startX: rect.left,
-        startY: rect.top,
+      };
+
+      setDraggedTaskId(task.id);
+
+      // Create a placeholder to hold the card's space in the column
+      const placeholder = document.createElement("div");
+      placeholder.style.height = `${rect.height}px`;
+      placeholder.style.transition = "height 0.2s ease";
+
+      // Remember where the card was in the DOM
+      const originalParent = el.parentElement!;
+      const originalNext = el.nextSibling;
+
+      // Store refs
+      dragRef.current.placeholder = placeholder;
+      dragRef.current.originalParent = originalParent;
+      dragRef.current.originalNext = originalNext;
+
+      // Insert placeholder and move card to body to escape overflow:hidden
+      originalParent.insertBefore(placeholder, el);
+      document.body.appendChild(el);
+
+      // Position card fixed on screen at its original location
+      el.style.position = "fixed";
+      el.style.left = `${rect.left}px`;
+      el.style.top = `${rect.top}px`;
+      el.style.width = `${rect.width}px`;
+      el.style.zIndex = "200";
+      el.style.pointerEvents = "none";
+      el.style.margin = "0";
+
+      gsap.to(el, {
+        scale: 1.05,
+        duration: 0.3,
+        ease: "back.out(1.7)",
       });
     },
     []
   );
 
-  // ─── Lift animation ─────────────────────────────
+  // ─── Pointer move & up (document-level) ─────────
   useEffect(() => {
-    if (!dragInfo || !dragCardRef.current) return;
-    gsap.fromTo(
-      dragCardRef.current,
-      { scale: 1 },
-      {
-        scale: 1.05,
-        duration: 0.3,
-        ease: "back.out(1.7)",
-      }
-    );
-  }, [!!dragInfo]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── Pointer move & up listeners ───────────────
-  useEffect(() => {
-    if (!dragInfo) return;
+    if (!draggedTaskId) return;
 
     const handleMove = (e: PointerEvent) => {
-      // Move floating card
-      if (dragCardRef.current) {
-        const di = dragInfoRef.current!;
-        dragCardRef.current.style.left = `${e.clientX - di.offsetX}px`;
-        dragCardRef.current.style.top = `${e.clientY - di.offsetY}px`;
-      }
+      const d = dragRef.current;
+      if (!d) return;
 
-      // Find column under pointer (X-axis match)
+      // Move the card (position: fixed, so set left/top directly)
+      d.el.style.left = `${e.clientX - d.offsetX}px`;
+      d.el.style.top = `${e.clientY - d.offsetY}px`;
+
+      // Find column under pointer
       let newDrop: { column: string; index: number } | null = null;
-      const di = dragInfoRef.current!;
 
       for (const col of COLUMNS) {
         const colEl = columnRefs.current[col];
@@ -183,7 +210,7 @@ export default function Home() {
 
         if (e.clientX >= rect.left && e.clientX <= rect.right) {
           const colTasks = boardRef.current[col].filter(
-            (t) => t.id !== di.task.id
+            (t) => t.id !== d.taskId
           );
           let insertIndex = colTasks.length;
 
@@ -217,64 +244,96 @@ export default function Home() {
     };
 
     const handleUp = () => {
-      const di = dragInfoRef.current;
+      const d = dragRef.current;
       const dt = dropTargetRef.current;
-      if (!di) return;
+      if (!d) return;
 
-      // Record floating position for FLIP
-      if (dragCardRef.current) {
-        const r = dragCardRef.current.getBoundingClientRect();
-        floatingPos.current = { x: r.left, y: r.top };
+      // Record where the card currently is on screen
+      const currentRect = d.el.getBoundingClientRect();
+      preDropRect.current = { x: currentRect.left, y: currentRect.top };
+      animCardId.current = d.taskId;
+
+      // Return card to its original DOM position and remove placeholder
+      gsap.set(d.el, { clearProps: "all" });
+      d.el.style.position = "";
+      d.el.style.left = "";
+      d.el.style.top = "";
+      d.el.style.width = "";
+      d.el.style.zIndex = "";
+      d.el.style.pointerEvents = "";
+      d.el.style.margin = "";
+
+      // Put card back into the DOM before React re-renders
+      if (d.placeholder.parentElement) {
+        d.placeholder.parentElement.insertBefore(d.el, d.placeholder);
+        d.placeholder.remove();
       }
-      animCardId.current = di.task.id;
 
       if (dt) {
+        // Move task in board state
         setBoard((prev) => {
           const next: Board = {};
           for (const col of COLUMNS) {
-            next[col] = prev[col].filter((t) => t.id !== di.task.id);
+            next[col] = prev[col].filter((t) => t.id !== d.taskId);
           }
           const target = [...next[dt.column]];
-          target.splice(dt.index, 0, di.task);
+          target.splice(dt.index, 0, d.task);
           next[dt.column] = target;
           return next;
         });
       }
 
-      setDragInfo(null);
+      // Clear drag state
+      dragRef.current = null;
+      setDraggedTaskId(null);
       setDropTarget(null);
 
-      // FLIP: animate card from floating position to its new DOM position
+      // FLIP: animate card from pre-drop screen position to new DOM position
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const cardId = animCardId.current;
-          const from = floatingPos.current;
+          const from = preDropRect.current;
           if (!cardId || !from) return;
 
           const cardEl = cardRefs.current[cardId];
           if (!cardEl) {
             animCardId.current = null;
-            floatingPos.current = null;
+            preDropRect.current = null;
             return;
           }
 
           const to = cardEl.getBoundingClientRect();
-          gsap.fromTo(
-            cardEl,
-            { x: from.x - to.left, y: from.y - to.top, scale: 1.05 },
-            {
-              x: 0,
-              y: 0,
+          const dx = from.x - to.left;
+          const dy = from.y - to.top;
+
+          // Only animate if there's meaningful movement
+          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+            gsap.fromTo(
+              cardEl,
+              { x: dx, y: dy, scale: 1.05 },
+              {
+                x: 0,
+                y: 0,
+                scale: 1,
+                duration: 0.4,
+                ease: "power2.out",
+                clearProps: "all",
+                onComplete: () => {
+                  animCardId.current = null;
+                  preDropRect.current = null;
+                },
+              }
+            );
+          } else {
+            gsap.to(cardEl, {
               scale: 1,
-              duration: 0.4,
-              ease: "power2.out",
+              duration: 0.3,
+              ease: "elastic.out(1, 0.5)",
               clearProps: "all",
-              onComplete: () => {
-                animCardId.current = null;
-                floatingPos.current = null;
-              },
-            }
-          );
+            });
+            animCardId.current = null;
+            preDropRect.current = null;
+          }
         });
       });
     };
@@ -285,7 +344,7 @@ export default function Home() {
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
     };
-  }, [!!dragInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!draggedTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Column highlight on drag hover ─────────────
   useEffect(() => {
@@ -293,7 +352,7 @@ export default function Home() {
       const colEl = columnRefs.current[col];
       if (!colEl) continue;
 
-      if (dragInfo && dropTarget?.column === col) {
+      if (draggedTaskId && dropTarget?.column === col) {
         gsap.to(colEl, {
           boxShadow:
             "inset 0 0 40px rgba(99, 102, 241, 0.12), 0 0 24px rgba(99, 102, 241, 0.08)",
@@ -312,7 +371,7 @@ export default function Home() {
         });
       }
     }
-  }, [dropTarget, dragInfo]);
+  }, [dropTarget, draggedTaskId]);
 
   // ─── Add task ───────────────────────────────────
   const handleAddTask = useCallback(() => {
@@ -399,8 +458,9 @@ export default function Home() {
         <main className="relative z-10 flex-1 px-8 pb-8 overflow-hidden">
           <div className="grid grid-cols-4 gap-5 h-full">
             {COLUMNS.map((column) => {
-              const tasks = board[column].filter(
-                (t) => !(dragInfo && t.id === dragInfo.task.id)
+              const tasks = board[column];
+              const visibleTasks = tasks.filter(
+                (t) => t.id !== draggedTaskId
               );
               const isDropColumn = dropTarget?.column === column;
 
@@ -438,7 +498,7 @@ export default function Home() {
                             color: "var(--text-muted)",
                           }}
                         >
-                          {board[column].length}
+                          {tasks.length}
                         </span>
                       </div>
                     </LiquidGlassWrap>
@@ -447,60 +507,68 @@ export default function Home() {
                   {/* Cards area */}
                   <div className="flex-1 overflow-y-auto px-3 pb-3">
                     <div className="flex flex-col gap-3">
-                      {tasks.map((task, i) => (
-                        <Fragment key={task.id}>
-                          {/* Drop indicator gap before this card */}
-                          {isDropColumn && dropTarget.index === i && (
-                            <div
-                              className="rounded-xl"
-                              style={{
-                                height: 72,
-                                background: "rgba(99, 102, 241, 0.08)",
-                                border: "2px dashed rgba(99, 102, 241, 0.25)",
-                                transition: "height 0.2s ease",
-                              }}
-                            />
-                          )}
+                      {tasks.map((task, i) => {
+                        const visibleIndex = visibleTasks.indexOf(task);
 
-                          <div
-                            ref={(el) => {
-                              cardRefs.current[task.id] = el;
-                            }}
-                            onPointerDown={(e) =>
-                              handleCardPointerDown(e, task, column)
-                            }
-                            style={{
-                              cursor: "grab",
-                              willChange: "transform",
-                              touchAction: "none",
-                            }}
-                          >
-                            <LiquidGlassWrap
-                              cornerRadius={16}
-                              padding="14px 16px"
-                              blurAmount={10}
-                              displacementScale={60}
-                              elasticity={0.2}
-                              shadowIntensity={0.8}
+                        return (
+                          <Fragment key={task.id}>
+                            {/* Drop indicator gap */}
+                            {task.id !== draggedTaskId &&
+                              isDropColumn &&
+                              dropTarget.index === visibleIndex && (
+                                <div
+                                  className="rounded-xl"
+                                  style={{
+                                    height: 72,
+                                    background: "rgba(99, 102, 241, 0.08)",
+                                    border:
+                                      "2px dashed rgba(99, 102, 241, 0.25)",
+                                    transition: "height 0.2s ease",
+                                  }}
+                                />
+                              )}
+
+                            <div
+                              ref={(el) => {
+                                cardRefs.current[task.id] = el;
+                              }}
+                              onPointerDown={(e) =>
+                                handleCardPointerDown(e, task, column)
+                              }
+                              style={{
+                                cursor: "grab",
+                                willChange: "transform",
+                                touchAction: "none",
+                              }}
                             >
-                              <TaskCardContent task={task} />
-                            </LiquidGlassWrap>
-                          </div>
-                        </Fragment>
-                      ))}
+                              <LiquidGlassWrap
+                                cornerRadius={16}
+                                padding="14px 16px"
+                                blurAmount={10}
+                                displacementScale={60}
+                                elasticity={0.2}
+                                shadowIntensity={0.8}
+                              >
+                                <TaskCardContent task={task} />
+                              </LiquidGlassWrap>
+                            </div>
+                          </Fragment>
+                        );
+                      })}
 
                       {/* Drop indicator at end of column */}
-                      {isDropColumn && dropTarget.index === tasks.length && (
-                        <div
-                          className="rounded-xl"
-                          style={{
-                            height: 72,
-                            background: "rgba(99, 102, 241, 0.08)",
-                            border: "2px dashed rgba(99, 102, 241, 0.25)",
-                            transition: "height 0.2s ease",
-                          }}
-                        />
-                      )}
+                      {isDropColumn &&
+                        dropTarget.index === visibleTasks.length && (
+                          <div
+                            className="rounded-xl"
+                            style={{
+                              height: 72,
+                              background: "rgba(99, 102, 241, 0.08)",
+                              border: "2px dashed rgba(99, 102, 241, 0.25)",
+                              transition: "height 0.2s ease",
+                            }}
+                          />
+                        )}
                     </div>
                   </div>
                 </div>
@@ -509,32 +577,6 @@ export default function Home() {
           </div>
         </main>
       </div>
-
-      {/* Floating drag card */}
-      {dragInfo && (
-        <div
-          ref={dragCardRef}
-          className="fixed z-[200] pointer-events-none"
-          style={{
-            left: dragInfo.startX,
-            top: dragInfo.startY,
-            width: dragInfo.width,
-            willChange: "transform",
-            opacity: 0.95,
-          }}
-        >
-          <LiquidGlassWrap
-            cornerRadius={16}
-            padding="14px 16px"
-            blurAmount={10}
-            displacementScale={60}
-            elasticity={0}
-            shadowIntensity={1.5}
-          >
-            <TaskCardContent task={dragInfo.task} />
-          </LiquidGlassWrap>
-        </div>
-      )}
 
       {/* Add task modal */}
       <GlassModal open={modalOpen} onClose={() => setModalOpen(false)}>
