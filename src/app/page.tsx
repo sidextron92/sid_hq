@@ -63,7 +63,7 @@ function getTagColor(tag: string): string {
 function TaskCardContent({ task }: { task: Task }) {
   return (
     <>
-      <h3 className="text-sm font-bold mb-2">{task.title}</h3>
+      <h3 className="text-sm font-bold mb-2 break-words overflow-hidden">{task.title}</h3>
       {task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {task.tags.map((tag) => (
@@ -430,8 +430,8 @@ export default function Home() {
         />
 
         {/* Header */}
-        <header className="relative z-10 px-8 pt-8 pb-4 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+        <header className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex items-center justify-between flex-shrink-0">
+          <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
             Control Centre
           </h1>
           <GlassButton onClick={() => setModalOpen(true)}>
@@ -455,8 +455,8 @@ export default function Home() {
         </header>
 
         {/* Kanban board */}
-        <main className="relative z-10 flex-1 px-8 pb-8 overflow-hidden">
-          <div className="grid grid-cols-4 gap-5 h-full">
+        <main className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
+          <div className="flex gap-5 h-full">
             {COLUMNS.map((column) => {
               const tasks = board[column];
               const visibleTasks = tasks.filter(
@@ -470,7 +470,7 @@ export default function Home() {
                   ref={(el) => {
                     columnRefs.current[column] = el;
                   }}
-                  className="flex flex-col h-full rounded-2xl overflow-hidden"
+                  className="flex flex-col h-full rounded-2xl overflow-hidden min-w-[220px] flex-1"
                   style={{
                     border: "1px solid rgba(255, 255, 255, 0.06)",
                     background: "rgba(0, 0, 0, 0.2)",
@@ -535,6 +535,7 @@ export default function Home() {
                               onPointerDown={(e) =>
                                 handleCardPointerDown(e, task, column)
                               }
+                              className="overflow-hidden"
                               style={{
                                 cursor: "grab",
                                 willChange: "transform",
