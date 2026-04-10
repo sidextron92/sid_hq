@@ -9,3 +9,4 @@ export { default as LayeredFAB } from "./LayeredFAB";
 export { default as GlassDropdown } from "./GlassDropdown";
 export { default as GlassModal } from "./GlassModal";
 export { default as GlassFormField } from "./GlassFormField";
+export { default as GlassSlider } from "./GlassSlider";

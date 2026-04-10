@@ -456,6 +456,72 @@ Labeled form input field with liquid glass styling. Similar to FluidInput but de
 - Mouse up: spring back to `1.02` (if focused) or `1`
 - Each keystroke: `scaleX: 1.006, scaleY: 0.997` → snap back in 0.25s
 
+### GlassSlider
+
+**File**: `GlassSlider.tsx`
+
+Liquid glass range slider inspired by [kube.io](https://kube.io/blog/liquid-glass-css-svg/). The track has two distinct glass regions — a blue-tinted clear glass fill and a frosted refractive unfilled region. The thumb uses the same oversized pill shape and press-to-glass interaction as TactileSwitch. Supports free dragging with snap-to-step on release.
+
+```tsx
+// Basic continuous slider
+<GlassSlider defaultValue={50} onChange={(v) => console.log(v)} />
+
+// Controlled with label
+<GlassSlider value={volume} onChange={setVolume} showLabel />
+
+// Stepped (3 discrete positions, snaps on release)
+<GlassSlider min={0} max={2} step={1} showLabel formatLabel={(v) => ["Low", "Mid", "High"][v]} />
+
+// Custom label format
+<GlassSlider defaultValue={25} step={5} showLabel formatLabel={(v) => `${v}%`} />
+
+// Disabled
+<GlassSlider defaultValue={50} disabled />
+```
+
+**Props**: `value`, `defaultValue`, `onChange`, `min` (default: `0`), `max` (default: `100`), `step` (default: `1`), `disabled`, `showLabel`, `formatLabel` (`(v: number) => string`), `className`, `scale`
+
+**Visual spec**:
+- Track: `320×16px`, fully rounded (`radius: 8px`)
+  - Background: `rgba(0, 0, 0, 0.15)`, `inset shadow: 0 2px 6px rgba(0,0,0,0.3)`
+  - Border shines: screen + overlay gradient masks (same xor technique as LiquidGlassWrap)
+- Filled region (left of thumb): blue glass `rgba(48, 130, 246, 0.85)`
+  - SVG displacement filter: `scale: 15`, `saturate: 3`, `blur: 0.3` (light refraction — background visible)
+  - `backdrop-filter: url(#fill-filter) blur(2px) saturate(120%)`
+  - Convex bezel specular overlay: `linear-gradient(180deg, rgba(255,255,255,0.30) 0%, ... rgba(0,0,0,0.08) 100%)`
+- Unfilled region (right of thumb): frosted glass `rgba(148, 148, 159, 0.25)`
+  - SVG displacement filter: `scale: 50`, `saturate: 6`, `blur: 1.2` (heavy distortion)
+  - `backdrop-filter: url(#unfill-filter) blur(8px) saturate(160%)`
+- Thumb: `56×44px` pill (`radius: 22px`) — oversized relative to track (same shape as TactileSwitch)
+  - At rest: `scale(0.65)`, opaque white `rgba(255,255,255,1)`, `shadow: 0 4px 22px rgba(0,0,0,0.1)`
+  - Pressed/glass mode: `scale(0.9)`, transparent `rgba(255,255,255,0.1)` — track shows through glass
+  - SVG displacement filter: `scale: 35`, `saturate: 6` (same as TactileSwitch thumb)
+  - Border shines: screen + overlay gradient masks
+  - Travel distance accounts for visual width at rest scale (`56 × 0.65 = 36.4px`)
+- Label: floating `<span>` above thumb, `13px bold`, white with text-shadow. Appears on press, hides on release.
+
+**3 SVG filters** (single `<svg>` with `<defs>`, unique IDs via `useId()`):
+1. `slider-thumb-{id}` — displacement 35, blur 0.2, saturate 6
+2. `slider-fill-{id}` — displacement 15, blur 0.3, saturate 3
+3. `slider-unfill-{id}` — displacement 50, blur 1.2, saturate 6
+
+**Interaction model**:
+
+1. **Click on track**: thumb jumps to clicked position with elastic spring animation
+2. **Drag**: press → thumb expands to glass mode → free drag (thumb follows cursor exactly, no step snapping during drag) → release → snaps to nearest step with elastic spring → thumb shrinks back to solid
+3. **Stepped mode** (`step > 1` relative to range): drag freely, snap to closest discrete position on release — like TactileSwitch snapping to closest side
+
+**GSAP animations**:
+- Press expand: `scale → 0.9`, ease `back.out(1.4)`, 0.3s
+- Press bg fade: `rgba(255,255,255,1) → 0.1`, ease `power2.out`, 0.25s
+- Release shrink: `scale → 0.65`, ease `elastic.out(1, 0.7)`, 0.5s
+- Release bg restore: `rgba(255,255,255,0.1) → 1`, ease `power2.out`, 0.35s
+- Snap to step (on release): `x → snappedX`, ease `elastic.out(1, 0.6)`, 0.4s
+- Track click jump: `x → targetX`, ease `elastic.out(1, 0.6)`, 0.5s
+- External value change: `x → newX`, ease `elastic.out(1, 0.65)`, 0.4s
+- Label show: `opacity → 1`, `y → -4`, ease `back.out(1.4)`, 0.2s
+- Label hide: `opacity → 0`, `y → 0`, ease `power2.out`, 0.3s
+
 ---
 
 ## CSS Glass (Non-LiquidGlassWrap) Spec
@@ -555,5 +621,6 @@ src/components/glass/
   GlassDropdown.tsx      — Dropdown select with frosted menu panel
   GlassModal.tsx         — Full-screen modal with glass backdrop and panel
   GlassFormField.tsx     — Labeled form input with glass styling
+  GlassSlider.tsx        — Range slider with blue fill and snap-to-step
   LayeredFAB.tsx         — Expandable floating action button
 ```

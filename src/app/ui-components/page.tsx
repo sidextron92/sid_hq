@@ -12,6 +12,7 @@ import {
   GlassDropdown,
   GlassModal,
   GlassFormField,
+  GlassSlider,
 } from "@/components/glass";
 
 const dockItems = [
@@ -103,6 +104,7 @@ export default function UIComponents() {
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState("");
+  const [sliderValue, setSliderValue] = useState(50);
 
   return (
     <>
@@ -241,10 +243,36 @@ export default function UIComponents() {
             </div>
           </section>
 
+          {/* Glass Slider */}
+          <section>
+            <h2 className="text-sm font-bold text-muted uppercase tracking-widest mb-4">
+              05 — Glass Slider
+            </h2>
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-4">
+                <GlassSlider
+                  value={sliderValue}
+                  onChange={setSliderValue}
+                  showLabel
+                />
+                <span className="text-sm font-bold text-muted">
+                  {sliderValue}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <GlassSlider defaultValue={0} min={0} max={2} step={1} showLabel formatLabel={(v) => ["Low", "Mid", "High"][v]} />
+              </div>
+              <div className="flex items-center gap-4">
+                <GlassSlider defaultValue={50} disabled />
+                <span className="text-sm font-bold text-muted">Disabled</span>
+              </div>
+            </div>
+          </section>
+
           {/* Segment Control */}
           <section>
             <h2 className="text-sm font-bold text-muted uppercase tracking-widest mb-4">
-              05 — Segment Control
+              06 — Segment Control
             </h2>
             <SegmentControl
               segments={["Board", "List", "Timeline"]}
