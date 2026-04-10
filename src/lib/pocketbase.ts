@@ -5,32 +5,6 @@ const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_URL);
 // Disable auto-cancellation so concurrent requests don't cancel each other
 pb.autoCancellation(false);
 
-// ─── Auth ───────────────────────────────────────────
-let authPromise: Promise<void> | null = null;
-
-async function ensureAuth(): Promise<void> {
-  if (pb.authStore.isValid) return;
-
-  // Deduplicate concurrent auth calls
-  if (!authPromise) {
-    authPromise = pb
-      .collection("users")
-      .authWithPassword(
-        process.env.NEXT_PUBLIC_POCKETBASE_ADMIN_EMAIL!,
-        process.env.NEXT_PUBLIC_POCKETBASE_ADMIN_PASSWORD!
-      )
-      .then(() => {
-        authPromise = null;
-      })
-      .catch((err) => {
-        authPromise = null;
-        throw err;
-      });
-  }
-
-  return authPromise;
-}
-
 // ─── Types ──────────────────────────────────────────
 export interface PBTag {
   id: string;
@@ -71,10 +45,10 @@ export function columnToStatus(column: string): string {
 }
 
 // ─── Tags ───────────────────────────────────────────
-export async function fetchTags(): Promise<PBTag[]> {
-  await ensureAuth();
+export async function fetchTags(ownerId: string): Promise<PBTag[]> {
   const records = await pb.collection("tags").getFullList<RecordModel>({
     sort: "name",
+    filter: `owner = "${ownerId}"`,
   });
   return records.map((r) => ({
     id: r.id,
@@ -83,12 +57,11 @@ export async function fetchTags(): Promise<PBTag[]> {
   }));
 }
 
-export async function findOrCreateTag(name: string): Promise<PBTag> {
-  await ensureAuth();
-  // Try to find existing tag by name
+export async function findOrCreateTag(name: string, ownerId: string): Promise<PBTag> {
+  // Try to find existing tag by name for this owner
   try {
     const existing = await pb.collection("tags").getFirstListItem<RecordModel>(
-      `name="${name}"`
+      `name="${name}" && owner="${ownerId}"`
     );
     return { id: existing.id, name: existing.name, color: existing.color };
   } catch {
@@ -96,17 +69,16 @@ export async function findOrCreateTag(name: string): Promise<PBTag> {
     const defaultColors = ["#8b5cf6", "#06b6d4", "#22c55e", "#f43f5e", "#f59e0b", "#ec4899", "#14b8a6", "#6366f1"];
     const hash = Array.from(name).reduce((h, c) => c.charCodeAt(0) + ((h << 5) - h), 0);
     const color = defaultColors[Math.abs(hash) % defaultColors.length];
-    const created = await pb.collection("tags").create<RecordModel>({ name, color });
+    const created = await pb.collection("tags").create<RecordModel>({ name, color, owner: ownerId });
     return { id: created.id, name: created.name, color: created.color };
   }
 }
 
 // ─── Tasks ──────────────────────────────────────────
-export async function fetchTasks(): Promise<PBTask[]> {
-  await ensureAuth();
+export async function fetchTasks(ownerId: string): Promise<PBTask[]> {
   const records = await pb.collection("tasks").getFullList<RecordModel>({
     sort: "sort_order",
-    filter: "is_deleted = false",
+    filter: `is_deleted = false && owner = "${ownerId}"`,
   });
   return records.map((r) => ({
     id: r.id,
@@ -123,8 +95,8 @@ export async function createTask(data: {
   status: string;
   tags: string[]; // tag IDs
   sort_order: number;
+  owner: string;
 }): Promise<PBTask> {
-  await ensureAuth();
   const record = await pb.collection("tasks").create<RecordModel>({
     ...data,
     is_deleted: false,
@@ -143,12 +115,10 @@ export async function updateTask(
   id: string,
   data: Partial<{ title: string; status: string; tags: string[]; sort_order: number }>
 ): Promise<void> {
-  await ensureAuth();
   await pb.collection("tasks").update(id, data);
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  await ensureAuth();
   await pb.collection("tasks").update(id, { is_deleted: true });
 }
 
@@ -157,7 +127,6 @@ export async function reorderColumn(
   column: string,
   taskIds: string[]
 ): Promise<void> {
-  await ensureAuth();
   const status = columnToStatus(column);
   await Promise.all(
     taskIds.map((id, index) =>

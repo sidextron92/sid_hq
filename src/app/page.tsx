@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, Fragment } from "react";
+import { useRouter } from "next/navigation";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -8,6 +9,7 @@ import {
   GlassFormField,
 } from "@/components/glass";
 import gsap from "gsap";
+import { useAuth } from "@/context/AuthContext";
 import {
   fetchTasks,
   fetchTags,
@@ -79,6 +81,9 @@ function TaskCardContent({
 
 // ─── Component ──────────────────────────────────────
 export default function Home() {
+  const { user, loading: authLoading, logout } = useAuth();
+  const router = useRouter();
+
   const emptyBoard: Board = { Backlog: [], "To Do": [], "In Progress": [], Done: [] };
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [tagMap, setTagMap] = useState<Record<string, PBTag>>({});
@@ -92,11 +97,19 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ─── Redirect if not authenticated ─────────────
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/login");
+    }
+  }, [authLoading, user, router]);
+
   // ─── Load data from PocketBase ──────────────────
   useEffect(() => {
+    if (!user) return;
     async function load() {
       try {
-        const [tasks, tags] = await Promise.all([fetchTasks(), fetchTags()]);
+        const [tasks, tags] = await Promise.all([fetchTasks(user!.id), fetchTags(user!.id)]);
 
         // Build tag map
         const map: Record<string, PBTag> = {};
@@ -119,7 +132,7 @@ export default function Home() {
       }
     }
     load();
-  }, []);
+  }, [user]);
 
   // Drag state — only the dragged task id is in React state (for drop indicators)
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -470,7 +483,7 @@ export default function Home() {
     try {
       // Resolve tag names to IDs (find or create)
       const resolvedTags = await Promise.all(
-        modalTags.map((name) => findOrCreateTag(name))
+        modalTags.map((name) => findOrCreateTag(name, user!.id))
       );
       const tagIds = resolvedTags.map((t) => t.id);
 
@@ -509,6 +522,7 @@ export default function Home() {
           status: "backlog",
           tags: tagIds,
           sort_order: backlogCount + 1,
+          owner: user!.id,
         });
 
         const task: Task = {
@@ -554,6 +568,8 @@ export default function Home() {
   }, [isEditing, editingTask, deleting, closeModal]);
 
   // ─── Render ─────────────────────────────────────
+  if (authLoading || !user) return null;
+
   return (
     <>
       <div className="h-screen bg-background relative overflow-hidden flex flex-col">
@@ -570,7 +586,7 @@ export default function Home() {
         {/* Dim overlay for readability */}
         <div
           className="absolute inset-0 z-0"
-          style={{ background: "rgba(0, 0, 0, 0.35)" }}
+          style={{ background: "rgba(0, 0, 0, 0.1)" }}
         />
 
         {/* Header */}
@@ -578,29 +594,50 @@ export default function Home() {
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
             Control Centre
           </h1>
-          <GlassButton onClick={() => {
-            setModalTitle("");
-            setModalTags([]);
-            setModalTagInput("");
-            setEditingTask("new");
-          }}>
-            <span className="flex items-center gap-2">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Add Task
-            </span>
-          </GlassButton>
+          <div className="flex items-center gap-3">
+            <GlassButton onClick={() => {
+              setModalTitle("");
+              setModalTags([]);
+              setModalTagInput("");
+              setEditingTask("new");
+            }}>
+              <span className="flex items-center gap-2">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Add Task
+              </span>
+            </GlassButton>
+            <GlassButton size="sm" onClick={logout}>
+              <span className="flex items-center gap-2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </span>
+            </GlassButton>
+          </div>
         </header>
 
         {/* Kanban board */}
@@ -629,7 +666,7 @@ export default function Home() {
                   className="flex flex-col h-full rounded-2xl overflow-hidden min-w-[220px] flex-1"
                   style={{
                     border: "1px solid rgba(255, 255, 255, 0.06)",
-                    background: "rgba(0, 0, 0, 0.2)",
+                    background: "rgba(0, 0, 0, 0.1)",
                     willChange: "transform, box-shadow",
                   }}
                 >
@@ -661,7 +698,7 @@ export default function Home() {
                   </div>
 
                   {/* Cards area */}
-                  <div className="flex-1 overflow-y-auto px-3 pb-3">
+                  <div className="flex-1 overflow-y-auto overflow-x-visible px-3 pb-3">
                     <div className="flex flex-col gap-3">
                       {tasks.map((task, i) => {
                         const visibleIndex = visibleTasks.indexOf(task);
@@ -691,7 +728,7 @@ export default function Home() {
                               onPointerDown={(e) =>
                                 handleCardPointerDown(e, task, column)
                               }
-                              className="overflow-hidden"
+                              className=""
                               style={{
                                 cursor: "grab",
                                 touchAction: "none",
@@ -700,8 +737,9 @@ export default function Home() {
                               <LiquidGlassWrap
                                 cornerRadius={16}
                                 padding="14px 16px"
-                                blurAmount={10}
+                                blurAmount={6}
                                 displacementScale={60}
+                                overLight
                                 elasticity={0.2}
                                 shadowIntensity={0.8}
                               >

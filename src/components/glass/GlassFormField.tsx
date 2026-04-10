@@ -96,7 +96,7 @@ export default function GlassFormField({
       {label && (
         <label
           className="block text-xs font-bold uppercase tracking-widest mb-2"
-          style={{ color: "var(--text-muted, #8a8a98)" }}
+          style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
         >
           {label}
         </label>

@@ -97,9 +97,9 @@ export default function GlassModal({
         ref={backdropRef}
         className="absolute inset-0"
         style={{
-          background: "rgba(0, 0, 0, 0.6)",
-          backdropFilter: "blur(8px) saturate(120%)",
-          WebkitBackdropFilter: "blur(8px) saturate(120%)",
+          background: "rgba(0, 0, 0, 0.5)",
+          backdropFilter: "blur(4px) saturate(120%)",
+          WebkitBackdropFilter: "blur(4px) saturate(120%)",
           opacity: 0,
         }}
         onClick={animateClose}
