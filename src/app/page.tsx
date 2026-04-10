@@ -7,9 +7,11 @@ import {
   GlassButton,
   GlassModal,
   GlassFormField,
+  TactileSwitch,
 } from "@/components/glass";
 import gsap from "gsap";
 import { useAuth } from "@/context/AuthContext";
+import RainOverlay, { type RainConfig } from "@/components/RainOverlay";
 import {
   fetchTasks,
   fetchTags,
@@ -96,6 +98,14 @@ export default function Home() {
   const [modalTags, setModalTags] = useState<string[]>([]); // tag names
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Rain overlay
+  const [rainActive, setRainActive] = useState(false);
+  const [rainConfig, setRainConfig] = useState<RainConfig>({
+    intensity: 2, wind: 0.5, opacity: 0.7,
+    splatterSize: 0.5, splatterParticleCount: 5, speedMin: 12, speedMax: 20, speed: 2,
+  });
+  const [rainModalOpen, setRainModalOpen] = useState(false);
 
   // ─── Redirect if not authenticated ─────────────
   useEffect(() => {
@@ -595,6 +605,35 @@ export default function Home() {
             Control Centre
           </h1>
           <div className="flex items-center gap-3">
+            {/* Rain settings */}
+            <GlassButton
+              size="sm"
+              tint={rainActive ? "rgba(99, 162, 241, 0.3)" : undefined}
+              onClick={() => setRainModalOpen(true)}
+            >
+              <span className="flex items-center gap-2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                  <path d="M8 19v1" />
+                  <path d="M8 14v1" />
+                  <path d="M16 19v1" />
+                  <path d="M16 14v1" />
+                  <path d="M12 21v1" />
+                  <path d="M12 16v1" />
+                </svg>
+                Rain
+              </span>
+            </GlassButton>
+
             <GlassButton onClick={() => {
               setModalTitle("");
               setModalTags([]);
@@ -688,7 +727,7 @@ export default function Home() {
                           className="text-xs font-bold px-2 py-0.5 rounded-full"
                           style={{
                             background: "rgba(255, 255, 255, 0.1)",
-                            color: "var(--text-muted)",
+                            color: "#ffffff",
                           }}
                         >
                           {tasks.length}
@@ -772,6 +811,9 @@ export default function Home() {
         </main>
       </div>
 
+      {/* Rain overlay */}
+      <RainOverlay active={rainActive} config={rainConfig} cardRefs={cardRefs} />
+
       {/* Create / Edit task modal */}
       <GlassModal open={modalOpen} onClose={closeModal}>
         <h2
@@ -782,7 +824,7 @@ export default function Home() {
         </h2>
         <p
           className="text-sm mb-6"
-          style={{ color: "var(--text-muted, #8a8a98)" }}
+          style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
         >
           {isEditing ? "Update task details or delete it." : "Add a new task to the Backlog."}
         </p>
@@ -799,7 +841,7 @@ export default function Home() {
           <div>
             <label
               className="block text-xs font-bold uppercase tracking-widest mb-2"
-              style={{ color: "var(--text-muted, #8a8a98)" }}
+              style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
             >
               Tags
             </label>
@@ -886,6 +928,190 @@ export default function Home() {
                   : isEditing ? "Save" : "Create Task"}
               </GlassButton>
             </div>
+          </div>
+        </div>
+      </GlassModal>
+
+      {/* Rain settings modal */}
+      <GlassModal open={rainModalOpen} onClose={() => setRainModalOpen(false)} width={360}>
+        <div className="flex flex-col gap-6">
+          {/* Header with toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2
+                className="text-xl font-bold tracking-tight"
+                style={{ color: "var(--text-main, #fcfcfd)" }}
+              >
+                Rain Effect
+              </h2>
+              <p
+                className="text-sm mt-1"
+                style={{ color: "rgba(255, 255, 255, 0.5)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              >
+                {rainActive ? "Rain is falling" : "Rain is paused"}
+              </p>
+            </div>
+            <TactileSwitch
+              checked={rainActive}
+              onChange={setRainActive}
+              scale={0.5}
+            />
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+
+          {/* Intensity */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span
+                className="text-xs font-bold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              >
+                Intensity
+              </span>
+              <span
+                className="text-xs font-bold"
+                style={{ color: "rgba(255,255,255,0.4)" }}
+              >
+                {rainConfig.intensity === 1 ? "Drizzle" : rainConfig.intensity === 2 ? "Moderate" : "Downpour"}
+              </span>
+            </div>
+            <LiquidGlassWrap
+              cornerRadius={12}
+              padding="12px 16px"
+              blurAmount={8}
+              displacementScale={40}
+              elasticity={0}
+              shadowIntensity={0.3}
+            >
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={1}
+                value={rainConfig.intensity}
+                onChange={(e) => setRainConfig((prev) => ({ ...prev, intensity: Number(e.target.value) }))}
+                className="w-full accent-indigo-400"
+                style={{ cursor: "pointer" }}
+              />
+              <div className="flex justify-between mt-1.5 text-[10px] font-bold uppercase" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span>Light</span>
+                <span>Medium</span>
+                <span>Heavy</span>
+              </div>
+            </LiquidGlassWrap>
+          </div>
+
+          {/* Wind */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span
+                className="text-xs font-bold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              >
+                Wind
+              </span>
+              <span
+                className="text-xs font-bold"
+                style={{ color: "rgba(255,255,255,0.4)" }}
+              >
+                {rainConfig.wind === 0 ? "None" : rainConfig.wind < 0 ? "Left" : "Right"}
+              </span>
+            </div>
+            <LiquidGlassWrap
+              cornerRadius={12}
+              padding="12px 16px"
+              blurAmount={8}
+              displacementScale={40}
+              elasticity={0}
+              shadowIntensity={0.3}
+            >
+              <input
+                type="range"
+                min={-1}
+                max={1}
+                step={0.1}
+                value={rainConfig.wind}
+                onChange={(e) => setRainConfig((prev) => ({ ...prev, wind: Number(e.target.value) }))}
+                className="w-full accent-indigo-400"
+                style={{ cursor: "pointer" }}
+              />
+              <div className="flex justify-between mt-1.5 text-[10px] font-bold uppercase" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span>Left</span>
+                <span>Calm</span>
+                <span>Right</span>
+              </div>
+            </LiquidGlassWrap>
+          </div>
+
+          {/* Opacity */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span
+                className="text-xs font-bold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              >
+                Visibility
+              </span>
+              <span
+                className="text-xs font-bold"
+                style={{ color: "rgba(255,255,255,0.4)" }}
+              >
+                {Math.round(rainConfig.opacity * 100)}%
+              </span>
+            </div>
+            <LiquidGlassWrap
+              cornerRadius={12}
+              padding="12px 16px"
+              blurAmount={8}
+              displacementScale={40}
+              elasticity={0}
+              shadowIntensity={0.3}
+            >
+              <input
+                type="range"
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={rainConfig.opacity}
+                onChange={(e) => setRainConfig((prev) => ({ ...prev, opacity: Number(e.target.value) }))}
+                className="w-full accent-indigo-400"
+                style={{ cursor: "pointer" }}
+              />
+              <div className="flex justify-between mt-1.5 text-[10px] font-bold uppercase" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span>Subtle</span>
+                <span>Full</span>
+              </div>
+            </LiquidGlassWrap>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+
+          {/* Speed */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Speed
+              </span>
+              <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
+                {rainConfig.speed === 1 ? "Slow" : rainConfig.speed === 2 ? "Medium" : "Fast"}
+              </span>
+            </div>
+            <LiquidGlassWrap cornerRadius={12} padding="12px 16px" blurAmount={8} displacementScale={40} elasticity={0} shadowIntensity={0.3}>
+              <input
+                type="range" min={1} max={3} step={1}
+                value={rainConfig.speed}
+                onChange={(e) => setRainConfig((prev) => ({ ...prev, speed: Number(e.target.value) }))}
+                className="w-full accent-indigo-400" style={{ cursor: "pointer" }}
+              />
+              <div className="flex justify-between mt-1.5 text-[10px] font-bold uppercase" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span>Slow</span>
+                <span>Medium</span>
+                <span>Fast</span>
+              </div>
+            </LiquidGlassWrap>
           </div>
         </div>
       </GlassModal>

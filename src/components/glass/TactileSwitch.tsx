@@ -9,6 +9,8 @@ interface TactileSwitchProps {
   onChange?: (checked: boolean) => void;
   disabled?: boolean;
   className?: string;
+  /** Visual scale factor (e.g. 0.5 = half size). Default 1. */
+  scale?: number;
 }
 
 const TRACK_W = 160;
@@ -27,6 +29,7 @@ export default function TactileSwitch({
   onChange,
   disabled = false,
   className = "",
+  scale: visualScale = 1,
 }: TactileSwitchProps) {
   const id = useId().replace(/:/g, "");
   const filterId = `switch-thumb-${id}`;
@@ -176,8 +179,15 @@ export default function TactileSwitch({
 
   return (
     <div
+      className={`inline-block ${className}`}
+      style={{
+        transform: visualScale !== 1 ? `scale(${visualScale})` : undefined,
+        transformOrigin: "center center",
+      }}
+    >
+    <div
       ref={trackRef}
-      className={`relative inline-block ${disabled ? "opacity-40 pointer-events-none" : "cursor-pointer"} ${className}`}
+      className={`relative inline-block ${disabled ? "opacity-40 pointer-events-none" : "cursor-pointer"}`}
       style={{
         width: TRACK_W,
         height: TRACK_H,
@@ -295,6 +305,7 @@ export default function TactileSwitch({
           }}
         />
       </div>
+    </div>
     </div>
   );
 }
