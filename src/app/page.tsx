@@ -375,6 +375,7 @@ export default function Home() {
   // Refs
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const boardScrollRef = useRef<HTMLElement | null>(null);
 
   // Mutable drag state (avoids re-renders on every pixel)
   const dragRef = useRef<{
@@ -402,54 +403,81 @@ export default function Home() {
   const animCardId = useRef<string | null>(null);
   const preDropRect = useRef<{ x: number; y: number } | null>(null);
 
-  // Track whether pointer moved (to distinguish click from drag)
-  const pointerMoved = useRef(false);
+  // Auto-scroll state during drag (for mobile / horizontally-scrolled board)
+  const autoScrollRAF = useRef<number | null>(null);
+  const autoScrollVel = useRef<{ x: number; y: number; colEl: HTMLElement | null }>({
+    x: 0,
+    y: 0,
+    colEl: null,
+  });
 
-  // ─── Start drag ─────────────────────────────────
-  const handleCardPointerDown = useCallback(
-    (e: React.PointerEvent, task: Task, column: string) => {
-      e.preventDefault();
-      const el = e.currentTarget as HTMLElement;
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollRAF.current != null) {
+      cancelAnimationFrame(autoScrollRAF.current);
+      autoScrollRAF.current = null;
+    }
+    autoScrollVel.current = { x: 0, y: 0, colEl: null };
+  }, []);
+
+  const tickAutoScroll = useCallback(() => {
+    const v = autoScrollVel.current;
+    const main = boardScrollRef.current;
+    if (main && v.x !== 0) main.scrollLeft += v.x;
+    if (v.colEl && v.y !== 0) v.colEl.scrollTop += v.y;
+    if (v.x !== 0 || v.y !== 0) {
+      autoScrollRAF.current = requestAnimationFrame(tickAutoScroll);
+    } else {
+      autoScrollRAF.current = null;
+    }
+  }, []);
+
+  // ─── Begin a real drag (called once activation threshold met) ──
+  const startDrag = useCallback(
+    (
+      el: HTMLElement,
+      task: Task,
+      column: string,
+      pointerId: number,
+      clientX: number,
+      clientY: number
+    ) => {
       const rect = el.getBoundingClientRect();
 
-      // Capture pointer on the element for reliable tracking
-      el.setPointerCapture(e.pointerId);
+      try {
+        el.setPointerCapture(pointerId);
+      } catch {
+        /* ignore */
+      }
 
       dragRef.current = {
         taskId: task.id,
         task,
         sourceColumn: column,
         el,
-        placeholder: null!, // set after creation below
+        placeholder: null!,
         originalParent: null!,
         originalNext: null,
         startRect: rect,
-        offsetX: e.clientX - rect.left,
-        offsetY: e.clientY - rect.top,
+        offsetX: clientX - rect.left,
+        offsetY: clientY - rect.top,
       };
 
       setDraggedTaskId(task.id);
-      pointerMoved.current = false;
 
-      // Create a placeholder to hold the card's space in the column
       const placeholder = document.createElement("div");
       placeholder.style.height = `${rect.height}px`;
       placeholder.style.transition = "height 0.2s ease";
 
-      // Remember where the card was in the DOM
       const originalParent = el.parentElement!;
       const originalNext = el.nextSibling;
 
-      // Store refs
       dragRef.current.placeholder = placeholder;
       dragRef.current.originalParent = originalParent;
       dragRef.current.originalNext = originalNext;
 
-      // Insert placeholder and move card to body to escape overflow:hidden
       originalParent.insertBefore(placeholder, el);
       document.body.appendChild(el);
 
-      // Position card fixed on screen at its original location
       el.style.willChange = "transform";
       el.style.position = "fixed";
       el.style.left = `${rect.left}px`;
@@ -458,199 +486,322 @@ export default function Home() {
       el.style.zIndex = "200";
       el.style.pointerEvents = "none";
       el.style.margin = "0";
+      el.style.touchAction = "none";
 
       gsap.to(el, {
         scale: 1.05,
         duration: 0.3,
         ease: "back.out(1.7)",
       });
+
+      // ─── Document-level move/up handlers (attached now, removed on up) ──
+      const handleMove = (ev: PointerEvent) => {
+        const d = dragRef.current;
+        if (!d) return;
+        ev.preventDefault();
+
+        d.el.style.left = `${ev.clientX - d.offsetX}px`;
+        d.el.style.top = `${ev.clientY - d.offsetY}px`;
+
+        // Find column under pointer (with horizontal tolerance for narrow viewports)
+        let newDrop: { column: string; index: number } | null = null;
+        let activeColEl: HTMLElement | null = null;
+        let bestDist = Infinity;
+
+        for (const col of COLUMNS) {
+          const colEl = columnRefs.current[col];
+          if (!colEl) continue;
+          const r = colEl.getBoundingClientRect();
+          // Vertical band check + nearest column horizontally (handles being slightly off)
+          if (ev.clientY < r.top - 40 || ev.clientY > r.bottom + 40) continue;
+          const cx = (r.left + r.right) / 2;
+          const dist =
+            ev.clientX >= r.left && ev.clientX <= r.right
+              ? 0
+              : Math.abs(ev.clientX - cx);
+          if (dist < bestDist) {
+            bestDist = dist;
+            const colTasks = boardRef.current[col].filter(
+              (t) => t.id !== d.taskId
+            );
+            let insertIndex = colTasks.length;
+            for (let i = 0; i < colTasks.length; i++) {
+              const cardEl = cardRefs.current[colTasks[i].id];
+              if (cardEl) {
+                const cr = cardEl.getBoundingClientRect();
+                if (ev.clientY < cr.top + cr.height / 2) {
+                  insertIndex = i;
+                  break;
+                }
+              }
+            }
+            newDrop = { column: col, index: insertIndex };
+            activeColEl = colEl;
+          }
+        }
+
+        setDropTarget((prev) => {
+          if (!newDrop && !prev) return prev;
+          if (
+            newDrop &&
+            prev &&
+            newDrop.column === prev.column &&
+            newDrop.index === prev.index
+          )
+            return prev;
+          return newDrop;
+        });
+
+        // ─── Edge auto-scroll ─────────────────────────
+        const EDGE = 60;
+        const MAX_SPEED = 18;
+        let vx = 0;
+        let vy = 0;
+
+        const main = boardScrollRef.current;
+        if (main) {
+          const mr = main.getBoundingClientRect();
+          if (ev.clientX < mr.left + EDGE) {
+            vx = -MAX_SPEED * Math.min(1, (mr.left + EDGE - ev.clientX) / EDGE);
+          } else if (ev.clientX > mr.right - EDGE) {
+            vx = MAX_SPEED * Math.min(1, (ev.clientX - (mr.right - EDGE)) / EDGE);
+          }
+        }
+
+        // Vertical auto-scroll within the active column's card area
+        let scrollColEl: HTMLElement | null = null;
+        if (activeColEl) {
+          const cardsArea = activeColEl.querySelector<HTMLElement>(
+            ".overflow-y-auto"
+          );
+          if (cardsArea) {
+            scrollColEl = cardsArea;
+            const cr = cardsArea.getBoundingClientRect();
+            if (ev.clientY < cr.top + EDGE) {
+              vy = -MAX_SPEED * Math.min(1, (cr.top + EDGE - ev.clientY) / EDGE);
+            } else if (ev.clientY > cr.bottom - EDGE) {
+              vy =
+                MAX_SPEED *
+                Math.min(1, (ev.clientY - (cr.bottom - EDGE)) / EDGE);
+            }
+          }
+        }
+
+        autoScrollVel.current = { x: vx, y: vy, colEl: scrollColEl };
+        if ((vx !== 0 || vy !== 0) && autoScrollRAF.current == null) {
+          autoScrollRAF.current = requestAnimationFrame(tickAutoScroll);
+        }
+      };
+
+      const finish = () => {
+        document.removeEventListener("pointermove", handleMove);
+        document.removeEventListener("pointerup", handleUp);
+        document.removeEventListener("pointercancel", handleUp);
+        stopAutoScroll();
+
+        const d = dragRef.current;
+        const dt = dropTargetRef.current;
+        if (!d) return;
+
+        const currentRect = d.el.getBoundingClientRect();
+        preDropRect.current = { x: currentRect.left, y: currentRect.top };
+        animCardId.current = d.taskId;
+
+        gsap.set(d.el, { clearProps: "all" });
+        d.el.style.position = "";
+        d.el.style.left = "";
+        d.el.style.top = "";
+        d.el.style.width = "";
+        d.el.style.zIndex = "";
+        d.el.style.pointerEvents = "";
+        d.el.style.margin = "";
+        d.el.style.willChange = "";
+        d.el.style.touchAction = "";
+
+        if (d.placeholder.parentElement) {
+          d.placeholder.parentElement.insertBefore(d.el, d.placeholder);
+          d.placeholder.remove();
+        }
+
+        if (dt) {
+          setBoard((prev) => {
+            const next: Board = {};
+            for (const col of COLUMNS) {
+              next[col] = prev[col].filter((t) => t.id !== d.taskId);
+            }
+            const target = [...next[dt.column]];
+            target.splice(dt.index, 0, d.task);
+            next[dt.column] = target;
+
+            reorderColumn(dt.column, target.map((t) => t.id)).catch((err) =>
+              console.error("Failed to persist reorder:", err)
+            );
+
+            return next;
+          });
+        }
+
+        dragRef.current = null;
+        setDraggedTaskId(null);
+        setDropTarget(null);
+
+        // FLIP: animate from pre-drop screen position to new DOM position
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const cardId = animCardId.current;
+            const from = preDropRect.current;
+            if (!cardId || !from) return;
+
+            const cardEl = cardRefs.current[cardId];
+            if (!cardEl) {
+              animCardId.current = null;
+              preDropRect.current = null;
+              return;
+            }
+
+            const to = cardEl.getBoundingClientRect();
+            const dx = from.x - to.left;
+            const dy = from.y - to.top;
+
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+              gsap.fromTo(
+                cardEl,
+                { x: dx, y: dy, scale: 1.05 },
+                {
+                  x: 0,
+                  y: 0,
+                  scale: 1,
+                  duration: 0.4,
+                  ease: "power2.out",
+                  clearProps: "all",
+                  onComplete: () => {
+                    animCardId.current = null;
+                    preDropRect.current = null;
+                  },
+                }
+              );
+            } else {
+              gsap.to(cardEl, {
+                scale: 1,
+                duration: 0.3,
+                ease: "elastic.out(1, 0.5)",
+                clearProps: "all",
+              });
+              animCardId.current = null;
+              preDropRect.current = null;
+            }
+          });
+        });
+      };
+
+      const handleUp = () => finish();
+
+      document.addEventListener("pointermove", handleMove, { passive: false });
+      document.addEventListener("pointerup", handleUp);
+      document.addEventListener("pointercancel", handleUp);
+    },
+    [stopAutoScroll, tickAutoScroll]
+  );
+
+  // ─── Pointerdown: long-press (touch) or threshold (mouse) gate ──
+  const openEditModalForTask = useCallback(
+    (task: Task, column: string) => {
+      setModalTitle(task.title);
+      setModalDescription(task.description || "");
+      setModalSpaceId(task.space || "");
+      const taskTagNames = task.tags
+        .map((id) => tagMapRef.current[id]?.name)
+        .filter(Boolean) as string[];
+      setModalTags(taskTagNames);
+      setModalTagInput("");
+      setEditingTask({ task, column });
     },
     []
   );
 
-  // ─── Pointer move & up (document-level) ─────────
-  useEffect(() => {
-    if (!draggedTaskId) return;
+  const handleCardPointerDown = useCallback(
+    (e: React.PointerEvent, task: Task, column: string) => {
+      // Ignore secondary buttons
+      if (e.button !== 0 && e.pointerType === "mouse") return;
 
-    const handleMove = (e: PointerEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
+      const el = e.currentTarget as HTMLElement;
+      const isTouch = e.pointerType === "touch";
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const pointerId = e.pointerId;
 
-      // Move the card (position: fixed, so set left/top directly)
-      d.el.style.left = `${e.clientX - d.offsetX}px`;
-      d.el.style.top = `${e.clientY - d.offsetY}px`;
-      pointerMoved.current = true;
+      let activated = false;
+      let cancelled = false;
+      let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
-      // Find column under pointer
-      let newDrop: { column: string; index: number } | null = null;
+      const cleanup = () => {
+        if (longPressTimer != null) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        el.removeEventListener("pointermove", onPreMove);
+        el.removeEventListener("pointerup", onPreUp);
+        el.removeEventListener("pointercancel", onPreCancel);
+      };
 
-      for (const col of COLUMNS) {
-        const colEl = columnRefs.current[col];
-        if (!colEl) continue;
-        const rect = colEl.getBoundingClientRect();
-
-        if (e.clientX >= rect.left && e.clientX <= rect.right) {
-          const colTasks = boardRef.current[col].filter(
-            (t) => t.id !== d.taskId
-          );
-          let insertIndex = colTasks.length;
-
-          for (let i = 0; i < colTasks.length; i++) {
-            const cardEl = cardRefs.current[colTasks[i].id];
-            if (cardEl) {
-              const cardRect = cardEl.getBoundingClientRect();
-              if (e.clientY < cardRect.top + cardRect.height / 2) {
-                insertIndex = i;
-                break;
-              }
-            }
+      const activate = (cx: number, cy: number) => {
+        if (activated || cancelled) return;
+        activated = true;
+        cleanup();
+        if (isTouch && typeof navigator !== "undefined" && navigator.vibrate) {
+          try {
+            navigator.vibrate(15);
+          } catch {
+            /* ignore */
           }
+        }
+        startDrag(el, task, column, pointerId, cx, cy);
+      };
 
-          newDrop = { column: col, index: insertIndex };
-          break;
+      function onPreMove(ev: PointerEvent) {
+        if (activated || cancelled) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        const dist = Math.hypot(dx, dy);
+        if (isTouch) {
+          // Movement before long-press fires → user is scrolling, abort drag intent
+          if (dist > 8) {
+            cancelled = true;
+            cleanup();
+          }
+        } else {
+          if (dist > 4) activate(ev.clientX, ev.clientY);
         }
       }
 
-      setDropTarget((prev) => {
-        if (!newDrop && !prev) return prev;
-        if (
-          newDrop &&
-          prev &&
-          newDrop.column === prev.column &&
-          newDrop.index === prev.index
-        )
-          return prev;
-        return newDrop;
-      });
-    };
-
-    const handleUp = () => {
-      const d = dragRef.current;
-      const dt = dropTargetRef.current;
-      if (!d) return;
-
-      // Record where the card currently is on screen
-      const currentRect = d.el.getBoundingClientRect();
-      preDropRect.current = { x: currentRect.left, y: currentRect.top };
-      animCardId.current = d.taskId;
-
-      // Return card to its original DOM position and remove placeholder
-      gsap.set(d.el, { clearProps: "all" });
-      d.el.style.position = "";
-      d.el.style.left = "";
-      d.el.style.top = "";
-      d.el.style.width = "";
-      d.el.style.zIndex = "";
-      d.el.style.pointerEvents = "";
-      d.el.style.margin = "";
-      d.el.style.willChange = "";
-
-      // Put card back into the DOM before React re-renders
-      if (d.placeholder.parentElement) {
-        d.placeholder.parentElement.insertBefore(d.el, d.placeholder);
-        d.placeholder.remove();
+      function onPreUp(ev: PointerEvent) {
+        if (activated) return;
+        cleanup();
+        if (cancelled) return;
+        // No drag occurred → treat as tap to open edit modal
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.hypot(dx, dy) < 10) {
+          openEditModalForTask(task, column);
+        }
       }
 
-      // If pointer didn't move, treat as click → open edit modal
-      if (!pointerMoved.current) {
-        dragRef.current = null;
-        setDraggedTaskId(null);
-        setDropTarget(null);
-        // Pre-populate form with existing task data
-        setModalTitle(d.task.title);
-        setModalDescription(d.task.description || "");
-        setModalSpaceId(d.task.space || "");
-        const taskTagNames = d.task.tags
-          .map((id) => tagMapRef.current[id]?.name)
-          .filter(Boolean) as string[];
-        setModalTags(taskTagNames);
-        setModalTagInput("");
-        setEditingTask({ task: d.task, column: d.sourceColumn });
-        return;
+      function onPreCancel() {
+        cancelled = true;
+        cleanup();
       }
 
-      if (dt) {
-        // Move task in board state
-        setBoard((prev) => {
-          const next: Board = {};
-          for (const col of COLUMNS) {
-            next[col] = prev[col].filter((t) => t.id !== d.taskId);
-          }
-          const target = [...next[dt.column]];
-          target.splice(dt.index, 0, d.task);
-          next[dt.column] = target;
+      el.addEventListener("pointermove", onPreMove);
+      el.addEventListener("pointerup", onPreUp);
+      el.addEventListener("pointercancel", onPreCancel);
 
-          // Persist to PocketBase (fire-and-forget)
-          reorderColumn(dt.column, target.map((t) => t.id)).catch((err) =>
-            console.error("Failed to persist reorder:", err)
-          );
-
-          return next;
-        });
+      if (isTouch) {
+        // Long-press to start drag on touch (allows native scroll otherwise)
+        longPressTimer = setTimeout(() => activate(startX, startY), 220);
       }
-
-      // Clear drag state
-      dragRef.current = null;
-      setDraggedTaskId(null);
-      setDropTarget(null);
-
-      // FLIP: animate card from pre-drop screen position to new DOM position
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const cardId = animCardId.current;
-          const from = preDropRect.current;
-          if (!cardId || !from) return;
-
-          const cardEl = cardRefs.current[cardId];
-          if (!cardEl) {
-            animCardId.current = null;
-            preDropRect.current = null;
-            return;
-          }
-
-          const to = cardEl.getBoundingClientRect();
-          const dx = from.x - to.left;
-          const dy = from.y - to.top;
-
-          // Only animate if there's meaningful movement
-          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-            gsap.fromTo(
-              cardEl,
-              { x: dx, y: dy, scale: 1.05 },
-              {
-                x: 0,
-                y: 0,
-                scale: 1,
-                duration: 0.4,
-                ease: "power2.out",
-                clearProps: "all",
-                onComplete: () => {
-                  animCardId.current = null;
-                  preDropRect.current = null;
-                },
-              }
-            );
-          } else {
-            gsap.to(cardEl, {
-              scale: 1,
-              duration: 0.3,
-              ease: "elastic.out(1, 0.5)",
-              clearProps: "all",
-            });
-            animCardId.current = null;
-            preDropRect.current = null;
-          }
-        });
-      });
-    };
-
-    document.addEventListener("pointermove", handleMove);
-    document.addEventListener("pointerup", handleUp);
-    return () => {
-      document.removeEventListener("pointermove", handleMove);
-      document.removeEventListener("pointerup", handleUp);
-    };
-  }, [!!draggedTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
+    },
+    [startDrag, openEditModalForTask]
+  );
 
   // ─── Column highlight on drag hover ─────────────
   useEffect(() => {
@@ -1036,7 +1187,7 @@ export default function Home() {
         </header>
 
         {/* Kanban board */}
-        <main className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
+        <main ref={boardScrollRef} className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
           {loading && (
             <div className="flex items-center justify-center h-full">
               <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
@@ -1145,7 +1296,11 @@ export default function Home() {
                               className=""
                               style={{
                                 cursor: "grab",
-                                touchAction: "none",
+                                // Allow native vertical/horizontal scroll until long-press activates drag
+                                touchAction: "pan-x pan-y",
+                                WebkitUserSelect: "none",
+                                userSelect: "none",
+                                WebkitTouchCallout: "none",
                               }}
                             >
                               <LiquidGlassWrap
