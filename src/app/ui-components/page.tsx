@@ -233,6 +233,9 @@ export default function UIComponents() {
               draggable
               refractive
               captureRef={captureRef}
+              blurAmount={2}
+              saturation={140}
+              elasticity={0.4}
             >
               <h3 className="text-lg font-black mb-1">Draggable Card</h3>
               <p className="text-sm text-muted">
@@ -266,9 +269,7 @@ export default function UIComponents() {
             <div className="flex flex-wrap gap-3 items-center">
               <GlassButton size="sm">Small</GlassButton>
               <GlassButton>Primary</GlassButton>
-              <GlassButton size="lg">
-                Ghost
-              </GlassButton>
+              <GlassButton size="lg">Ghost</GlassButton>
               <GlassButton disabled>Disabled</GlassButton>
               <GlassButton tint="rgba(239, 68, 68, 0.35)">Delete</GlassButton>
             </div>

@@ -12,6 +12,7 @@ interface GlassCardProps {
   cornerRadius?: number;
   padding?: string;
   style?: React.CSSProperties;
+  onClick?: () => void;
   /**
    * Enable true optical refraction via the clone technique.
    * When enabled, `renderScene` MUST be provided — the scene is cloned inside
@@ -50,6 +51,24 @@ interface GlassCardProps {
    * When provided, this supersedes `renderScene`.
    */
   captureRef?: React.RefObject<HTMLElement | null>;
+  /** Backdrop frosting strength in px (0 = clear, 40 = fully frosted). Default 0. */
+  blurAmount?: number;
+  /** Backdrop saturation %. Default 140. */
+  saturation?: number;
+  /** Cursor-following stretch factor (0 = static, 1 = max follow). Default 0. */
+  elasticity?: number;
+  /** Refraction intensity via SVG displacement. Default 100. */
+  displacementScale?: number;
+  /** Chromatic aberration intensity. Default 2. */
+  aberrationIntensity?: number;
+  /** Dark tint for bright backgrounds. Halves text-shadow. */
+  overLight?: boolean;
+  /** Drop shadow depth (0–2). Default 1. */
+  shadowIntensity?: number;
+  /** Border shine visibility (0–1). Default 1. */
+  borderOpacity?: number;
+  /** Colored overlay, e.g. `rgba(99,102,241,0.3)`. */
+  tint?: string;
 }
 
 export default function GlassCard({
@@ -59,11 +78,21 @@ export default function GlassCard({
   cornerRadius = 24,
   padding = "24px 28px",
   style,
+  onClick,
   refractive = false,
   renderScene,
   sceneSize,
   sceneRef,
   captureRef,
+  blurAmount,
+  saturation,
+  elasticity,
+  displacementScale,
+  aberrationIntensity,
+  overLight,
+  shadowIntensity,
+  borderOpacity,
+  tint,
 }: GlassCardProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -110,14 +139,19 @@ export default function GlassCard({
   }, [refractive, size.w, size.h, cornerRadius]);
 
   // DOM capture: clone the captureRef element's subtree into cloneInnerRef.
-  // Strips any element marked data-refraction-ignore="true" (used to exclude
-  // the card itself to prevent recursive self-cloning).
+  // Hides (but does NOT remove) elements marked data-refraction-ignore="true"
+  // — typically refractive glass components themselves, to prevent recursive
+  // self-cloning. We use visibility:hidden so the element keeps its layout
+  // box; removing it would collapse surrounding flow content and misalign
+  // the refracted scene with the real page.
   const syncCapturedDom = useCallback(() => {
     if (!captureRef?.current || !cloneInnerRef.current) return;
     const snapshot = captureRef.current.cloneNode(true) as HTMLElement;
-    // Strip ignored elements
-    snapshot.querySelectorAll('[data-refraction-ignore="true"]').forEach((el) => el.remove());
-    // Replace the clone inner's children with the cloned subtree
+    snapshot
+      .querySelectorAll('[data-refraction-ignore="true"]')
+      .forEach((el) => {
+        if (el instanceof HTMLElement) el.style.visibility = "hidden";
+      });
     cloneInnerRef.current.replaceChildren(snapshot);
   }, [captureRef]);
 
@@ -239,9 +273,9 @@ export default function GlassCard({
     });
   }, [refractive, updateClonePosition]);
 
-  // Cursor-following radial glow + dynamic border shine for the refractive path.
-  // We update DOM styles directly (via refs) rather than React state so we don't
-  // trigger a re-render on every mouse move.
+  // Cursor-following radial glow + dynamic border shine + elasticity for the
+  // refractive path. We update DOM styles directly (via refs) rather than React
+  // state so we don't trigger a re-render on every mouse move.
   const handleCardMouseMove = useCallback((e: React.MouseEvent) => {
     if (!refractive || !cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
@@ -251,6 +285,26 @@ export default function GlassCard({
     const offY = ((e.clientY - cy) / rect.height) * 100;
     const posX = ((e.clientX - rect.left) / rect.width) * 100;
     const posY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    // Elasticity: translate + directional stretch toward the cursor.
+    // Applied directly to cardRef.style.transform — does NOT collide with the
+    // wrapperRef's GSAP-driven drag transforms.
+    if (elasticity && elasticity > 0) {
+      const deltaX = e.clientX - cx;
+      const deltaY = e.clientY - cy;
+      const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const tx = deltaX * elasticity * 0.06;
+      const ty = deltaY * elasticity * 0.06;
+      const normX = dist > 0 ? Math.abs(deltaX / dist) : 0;
+      const normY = dist > 0 ? Math.abs(deltaY / dist) : 0;
+      const stretch = Math.min(dist / 400, 1) * elasticity;
+      const sx = 1 + normX * stretch * 0.12 - normY * stretch * 0.06;
+      const sy = 1 + normY * stretch * 0.12 - normX * stretch * 0.06;
+      cardRef.current.style.transform = `translate(${tx}px, ${ty}px) scaleX(${Math.max(0.9, sx)}) scaleY(${Math.max(0.9, sy)})`;
+      cardRef.current.style.transition = "transform 0.15s ease-out";
+      // Re-pin the clone after the transform shifts the card's BCR
+      updateClonePosition();
+    }
 
     if (glowRef.current) {
       glowRef.current.style.background = `radial-gradient(circle at ${posX}% ${posY}%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)`;
@@ -270,7 +324,7 @@ export default function GlassCard({
     if (borderOverlayRef.current) {
       borderOverlayRef.current.style.background = `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${overlayA1}) ${gradStop1}%, rgba(255,255,255,${overlayA2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`;
     }
-  }, [refractive]);
+  }, [refractive, elasticity, updateClonePosition]);
 
   const handleCardMouseEnter = useCallback(() => {
     if (!refractive || !glowRef.current) return;
@@ -278,9 +332,14 @@ export default function GlassCard({
   }, [refractive]);
 
   const handleCardMouseLeave = useCallback(() => {
-    if (!refractive || !glowRef.current) return;
-    glowRef.current.style.opacity = "0";
-  }, [refractive]);
+    if (!refractive) return;
+    if (glowRef.current) glowRef.current.style.opacity = "0";
+    if (elasticity && elasticity > 0 && cardRef.current) {
+      cardRef.current.style.transform = "";
+      // Re-pin once the spring-back transition starts
+      updateClonePosition();
+    }
+  }, [refractive, elasticity, updateClonePosition]);
 
   // Non-refractive path — original implementation
   if (!refractive) {
@@ -298,6 +357,16 @@ export default function GlassCard({
           padding={padding}
           style={style}
           className={className}
+          blurAmount={blurAmount}
+          saturation={saturation}
+          elasticity={elasticity}
+          displacementScale={displacementScale}
+          aberrationIntensity={aberrationIntensity}
+          overLight={overLight}
+          shadowIntensity={shadowIntensity}
+          borderOpacity={borderOpacity}
+          tint={tint}
+          onClick={onClick}
         >
           {children}
         </LiquidGlassWrap>
@@ -416,6 +485,19 @@ export default function GlassCard({
             </div>
           </div>
         )}
+
+        {/* Frost layer — backdrop blur + saturation over the refracted clone */}
+        {blurAmount && blurAmount > 0 ? (
+          <span
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              borderRadius: "inherit",
+              backdropFilter: `blur(${blurAmount}px) saturate(${saturation ?? 140}%)`,
+              WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation ?? 140}%)`,
+              zIndex: 1,
+            }}
+          />
+        ) : null}
 
         {/* Glass surface overlay — subtle tint + border shines */}
         <span

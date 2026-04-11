@@ -9,6 +9,7 @@ import {
   GlassFormField,
   TactileSwitch,
   GlassSlider,
+  FluidInput,
 } from "@/components/glass";
 import gsap from "gsap";
 import { useAuth } from "@/context/AuthContext";
@@ -107,6 +108,9 @@ export default function Home() {
     splatterSize: 0.5, splatterParticleCount: 5, speedMin: 12, speedMax: 20, speed: 2,
   });
   const [rainModalOpen, setRainModalOpen] = useState(false);
+
+  // Search / filter
+  const [searchQuery, setSearchQuery] = useState("");
 
   // ─── Redirect if not authenticated ─────────────
   useEffect(() => {
@@ -605,6 +609,12 @@ export default function Home() {
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
             Control Centre
           </h1>
+          <FluidInput
+            placeholder="Search tasks..."
+            value={searchQuery}
+            onChange={setSearchQuery}
+            width={240}
+          />
           <div className="flex items-center gap-3">
             {/* Rain settings */}
             <GlassButton
@@ -691,7 +701,16 @@ export default function Home() {
           )}
           <div className="flex gap-5 h-full" style={{ display: loading ? "none" : undefined }}>
             {COLUMNS.map((column) => {
-              const tasks = board[column];
+              const query = searchQuery.trim().toLowerCase();
+              const tasks = query
+                ? board[column].filter((t) => {
+                    if (t.title.toLowerCase().includes(query)) return true;
+                    return t.tags.some((tagId) => {
+                      const tag = tagMap[tagId];
+                      return tag && tag.name.toLowerCase().includes(query);
+                    });
+                  })
+                : board[column];
               const visibleTasks = tasks.filter(
                 (t) => t.id !== draggedTaskId
               );
