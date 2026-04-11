@@ -6,17 +6,27 @@ const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_URL);
 pb.autoCancellation(false);
 
 // ─── Types ──────────────────────────────────────────
+export interface PBSpace {
+  id: string;
+  name: string;
+  color: string;
+  is_default: boolean;
+}
+
 export interface PBTag {
   id: string;
   name: string;
   color: string;
+  space: string; // space id
 }
 
 export interface PBTask {
   id: string;
   title: string;
+  description: string;
   status: string;
   tags: string[]; // tag record IDs
+  space: string; // space id
   sort_order: number;
   is_deleted: boolean;
 }
@@ -44,47 +54,239 @@ export function columnToStatus(column: string): string {
   return COLUMN_TO_STATUS[column] ?? "backlog";
 }
 
-// ─── Tags ───────────────────────────────────────────
-export async function fetchTags(ownerId: string): Promise<PBTag[]> {
-  const records = await pb.collection("tags").getFullList<RecordModel>({
-    sort: "name",
+// ─── Spaces ─────────────────────────────────────────
+const DEFAULT_SPACE_COLORS = [
+  "#8b5cf6", "#06b6d4", "#22c55e", "#f43f5e",
+  "#f59e0b", "#ec4899", "#14b8a6", "#6366f1",
+];
+
+export async function fetchSpaces(ownerId: string): Promise<PBSpace[]> {
+  const records = await pb.collection("spaces").getFullList<RecordModel>({
+    sort: "-is_default,name",
     filter: `owner = "${ownerId}"`,
   });
   return records.map((r) => ({
     id: r.id,
     name: r.name,
-    color: r.color,
+    color: r.color || DEFAULT_SPACE_COLORS[0],
+    is_default: r.is_default ?? false,
   }));
 }
 
-export async function findOrCreateTag(name: string, ownerId: string): Promise<PBTag> {
-  // Try to find existing tag by name for this owner
+export async function createSpace(data: {
+  name: string;
+  ownerId: string;
+  color?: string;
+  makeDefault?: boolean;
+}): Promise<PBSpace> {
+  // If makeDefault, clear other defaults first
+  if (data.makeDefault) {
+    const existing = await pb.collection("spaces").getFullList<RecordModel>({
+      filter: `owner = "${data.ownerId}" && is_default = true`,
+    });
+    await Promise.all(
+      existing.map((r) => pb.collection("spaces").update(r.id, { is_default: false }))
+    );
+  }
+
+  const color =
+    data.color ||
+    DEFAULT_SPACE_COLORS[Math.floor(Math.random() * DEFAULT_SPACE_COLORS.length)];
+
+  const record = await pb.collection("spaces").create<RecordModel>({
+    name: data.name,
+    color,
+    is_default: data.makeDefault ?? false,
+    owner: data.ownerId,
+  });
+
+  return {
+    id: record.id,
+    name: record.name,
+    color: record.color,
+    is_default: record.is_default ?? false,
+  };
+}
+
+export async function updateSpace(
+  id: string,
+  data: Partial<{ name: string; color: string }>
+): Promise<void> {
+  await pb.collection("spaces").update(id, data);
+}
+
+export async function setDefaultSpace(spaceId: string, ownerId: string): Promise<void> {
+  // Clear all other defaults for this owner
+  const others = await pb.collection("spaces").getFullList<RecordModel>({
+    filter: `owner = "${ownerId}" && id != "${spaceId}" && is_default = true`,
+  });
+  await Promise.all(
+    others.map((r) => pb.collection("spaces").update(r.id, { is_default: false }))
+  );
+  await pb.collection("spaces").update(spaceId, { is_default: true });
+}
+
+/**
+ * Delete a space and cascade-delete all its tasks and tags.
+ * Soft-deletes tasks (is_deleted = true); hard-deletes tags and space record.
+ */
+export async function deleteSpace(spaceId: string, ownerId: string): Promise<void> {
+  // Soft-delete all tasks in this space
+  const tasks = await pb.collection("tasks").getFullList<RecordModel>({
+    filter: `space = "${spaceId}" && owner = "${ownerId}" && is_deleted = false`,
+  });
+  await Promise.all(
+    tasks.map((r) => pb.collection("tasks").update(r.id, { is_deleted: true }))
+  );
+
+  // Hard-delete all tags in this space
+  const tags = await pb.collection("tags").getFullList<RecordModel>({
+    filter: `space = "${spaceId}" && owner = "${ownerId}"`,
+  });
+  await Promise.all(tags.map((r) => pb.collection("tags").delete(r.id)));
+
+  // Delete space
+  await pb.collection("spaces").delete(spaceId);
+}
+
+export async function countTasksInSpace(spaceId: string, ownerId: string): Promise<number> {
+  const list = await pb.collection("tasks").getList(1, 1, {
+    filter: `space = "${spaceId}" && owner = "${ownerId}" && is_deleted = false`,
+  });
+  return list.totalItems;
+}
+
+/**
+ * Ensure the user has at least one space. If none exist, create "General" as default
+ * and backfill any existing tags/tasks (rows without a space field) to it.
+ * Safe to call on every app load — exits early if a space already exists.
+ */
+export async function ensureDefaultSpace(ownerId: string): Promise<PBSpace> {
+  const existing = await fetchSpaces(ownerId);
+  if (existing.length > 0) {
+    // Ensure at least one is marked default
+    if (!existing.some((s) => s.is_default)) {
+      await setDefaultSpace(existing[0].id, ownerId);
+      existing[0].is_default = true;
+    }
+    return existing.find((s) => s.is_default) || existing[0];
+  }
+
+  // Create General space
+  const general = await createSpace({
+    name: "General",
+    ownerId,
+    color: "#6366f1",
+    makeDefault: true,
+  });
+
+  // Backfill existing orphan tags (space empty)
+  try {
+    const orphanTags = await pb.collection("tags").getFullList<RecordModel>({
+      filter: `owner = "${ownerId}" && space = ""`,
+    });
+    await Promise.all(
+      orphanTags.map((r) => pb.collection("tags").update(r.id, { space: general.id }))
+    );
+    if (orphanTags.length > 0) {
+      console.log(`✅ tag backfill complete (${orphanTags.length} tags)`);
+    }
+  } catch (err) {
+    console.warn("Tag backfill skipped:", err);
+  }
+
+  // Backfill existing orphan tasks (space empty)
+  try {
+    const orphanTasks = await pb.collection("tasks").getFullList<RecordModel>({
+      filter: `owner = "${ownerId}" && space = ""`,
+    });
+    await Promise.all(
+      orphanTasks.map((r) => pb.collection("tasks").update(r.id, { space: general.id }))
+    );
+    if (orphanTasks.length > 0) {
+      console.log(`✅ task backfill complete (${orphanTasks.length} tasks)`);
+    }
+  } catch (err) {
+    console.warn("Task backfill skipped:", err);
+  }
+
+  return general;
+}
+
+// ─── Tags ───────────────────────────────────────────
+export async function fetchTags(ownerId: string, spaceId?: string): Promise<PBTag[]> {
+  const filter = spaceId
+    ? pb.filter("owner = {:owner} && space = {:space}", {
+        owner: ownerId,
+        space: spaceId,
+      })
+    : pb.filter("owner = {:owner}", { owner: ownerId });
+  const records = await pb.collection("tags").getFullList<RecordModel>({
+    sort: "name",
+    filter,
+  });
+  return records.map((r) => ({
+    id: r.id,
+    name: r.name,
+    color: r.color,
+    space: r.space || "",
+  }));
+}
+
+export async function findOrCreateTag(
+  name: string,
+  ownerId: string,
+  spaceId: string
+): Promise<PBTag> {
+  // Try to find existing tag by (name, space) for this owner
   try {
     const existing = await pb.collection("tags").getFirstListItem<RecordModel>(
-      `name="${name}" && owner="${ownerId}"`
+      `name="${name}" && owner="${ownerId}" && space="${spaceId}"`
     );
-    return { id: existing.id, name: existing.name, color: existing.color };
+    return {
+      id: existing.id,
+      name: existing.name,
+      color: existing.color,
+      space: existing.space || "",
+    };
   } catch {
-    // Not found — create it with a default color
-    const defaultColors = ["#8b5cf6", "#06b6d4", "#22c55e", "#f43f5e", "#f59e0b", "#ec4899", "#14b8a6", "#6366f1"];
-    const hash = Array.from(name).reduce((h, c) => c.charCodeAt(0) + ((h << 5) - h), 0);
-    const color = defaultColors[Math.abs(hash) % defaultColors.length];
-    const created = await pb.collection("tags").create<RecordModel>({ name, color, owner: ownerId });
-    return { id: created.id, name: created.name, color: created.color };
+    // Not found — create it with a deterministic color
+    const hash = Array.from(name).reduce(
+      (h, c) => c.charCodeAt(0) + ((h << 5) - h),
+      0
+    );
+    const color = DEFAULT_SPACE_COLORS[Math.abs(hash) % DEFAULT_SPACE_COLORS.length];
+    const created = await pb.collection("tags").create<RecordModel>({
+      name,
+      color,
+      owner: ownerId,
+      space: spaceId,
+    });
+    return {
+      id: created.id,
+      name: created.name,
+      color: created.color,
+      space: created.space || "",
+    };
   }
 }
 
 // ─── Tasks ──────────────────────────────────────────
-export async function fetchTasks(ownerId: string): Promise<PBTask[]> {
+export async function fetchTasks(ownerId: string, spaceId?: string): Promise<PBTask[]> {
+  const filter = spaceId
+    ? `is_deleted = false && owner = "${ownerId}" && space = "${spaceId}"`
+    : `is_deleted = false && owner = "${ownerId}"`;
   const records = await pb.collection("tasks").getFullList<RecordModel>({
     sort: "sort_order",
-    filter: `is_deleted = false && owner = "${ownerId}"`,
+    filter,
   });
   return records.map((r) => ({
     id: r.id,
     title: r.title,
+    description: r.description ?? "",
     status: r.status,
     tags: r.tags ?? [],
+    space: r.space || "",
     sort_order: r.sort_order ?? 0,
     is_deleted: r.is_deleted ?? false,
   }));
@@ -92,20 +294,25 @@ export async function fetchTasks(ownerId: string): Promise<PBTask[]> {
 
 export async function createTask(data: {
   title: string;
+  description?: string;
   status: string;
   tags: string[]; // tag IDs
+  space: string;
   sort_order: number;
   owner: string;
 }): Promise<PBTask> {
   const record = await pb.collection("tasks").create<RecordModel>({
     ...data,
+    description: data.description ?? "",
     is_deleted: false,
   });
   return {
     id: record.id,
     title: record.title,
+    description: record.description ?? "",
     status: record.status,
     tags: record.tags ?? [],
+    space: record.space || "",
     sort_order: record.sort_order ?? 0,
     is_deleted: false,
   };
@@ -113,7 +320,14 @@ export async function createTask(data: {
 
 export async function updateTask(
   id: string,
-  data: Partial<{ title: string; status: string; tags: string[]; sort_order: number }>
+  data: Partial<{
+    title: string;
+    description: string;
+    status: string;
+    tags: string[];
+    space: string;
+    sort_order: number;
+  }>
 ): Promise<void> {
   await pb.collection("tasks").update(id, data);
 }

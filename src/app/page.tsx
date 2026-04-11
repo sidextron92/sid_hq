@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, Fragment } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   LiquidGlassWrap,
   GlassButton,
   GlassModal,
   GlassFormField,
+  GlassDropdown,
   TactileSwitch,
   GlassSlider,
   FluidInput,
@@ -14,23 +17,31 @@ import {
 import gsap from "gsap";
 import { useAuth } from "@/context/AuthContext";
 import RainOverlay, { type RainConfig } from "@/components/RainOverlay";
+import ManageSpacesModal from "@/components/ManageSpacesModal";
 import {
   fetchTasks,
   fetchTags,
+  fetchSpaces,
+  ensureDefaultSpace,
   createTask,
   updateTask,
   deleteTask,
   findOrCreateTag,
   reorderColumn,
   statusToColumn,
-  columnToStatus,
   type PBTag,
+  type PBSpace,
 } from "@/lib/pocketbase";
+
+const ALL_SPACES = "__all__";
+const ACTIVE_SPACE_STORAGE_KEY = "controlcentre.activeSpaceId";
 
 // ─── Types ──────────────────────────────────────────
 interface Task {
   id: string;
   title: string;
+  description: string;
+  space: string;
   tags: string[]; // tag record IDs
 }
 
@@ -50,15 +61,49 @@ function hexToRgba(hex: string, alpha: number): string {
 function TaskCardContent({
   task,
   tagMap,
+  spaceMap,
+  showSpacePill,
 }: {
   task: Task;
   tagMap: Record<string, PBTag>;
+  spaceMap: Record<string, PBSpace>;
+  showSpacePill: boolean;
 }) {
+  const space = spaceMap[task.space];
   return (
     <>
-      <h3 className="text-sm font-bold mb-2 break-words overflow-hidden">
-        {task.title}
-      </h3>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h3 className="text-sm font-bold break-words overflow-hidden flex-1">
+          {task.title}
+        </h3>
+        {showSpacePill && space && (
+          <span
+            className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex-shrink-0"
+            style={{
+              background: hexToRgba(space.color || "#6366f1", 0.35),
+              border: `1px solid ${hexToRgba(space.color || "#6366f1", 0.5)}`,
+              color: "#fff",
+            }}
+          >
+            {space.name}
+          </span>
+        )}
+      </div>
+      {task.description && task.description.trim().length > 0 && (
+        <div
+          className="task-md-excerpt text-xs mb-2 break-words overflow-hidden"
+          style={{
+            color: "rgba(255,255,255,0.75)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+          }}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {task.description}
+          </ReactMarkdown>
+        </div>
+      )}
       {task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {task.tags.map((tagId) => {
@@ -93,13 +138,27 @@ export default function Home() {
   const [tagMap, setTagMap] = useState<Record<string, PBTag>>({});
   const [loading, setLoading] = useState(true);
 
+  // Spaces
+  const [spaces, setSpaces] = useState<PBSpace[]>([]);
+  const [activeSpaceId, setActiveSpaceId] = useState<string>(ALL_SPACES);
+  const [spacesModalOpen, setSpacesModalOpen] = useState(false);
+
   // Unified modal state: null = closed, "new" = create, { task, column } = edit
   const [editingTask, setEditingTask] = useState<{ task: Task; column: string } | "new" | null>(null);
   const [modalTitle, setModalTitle] = useState("");
+  const [modalDescription, setModalDescription] = useState("");
+  const [modalSpaceId, setModalSpaceId] = useState<string>("");
   const [modalTagInput, setModalTagInput] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]); // tag names
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Build lookup maps
+  const spaceMap = useMemo(() => {
+    const m: Record<string, PBSpace> = {};
+    for (const s of spaces) m[s.id] = s;
+    return m;
+  }, [spaces]);
 
   // Rain overlay
   const [rainActive, setRainActive] = useState(false);
@@ -108,6 +167,84 @@ export default function Home() {
     splatterSize: 0.5, splatterParticleCount: 5, speedMin: 12, speedMax: 20, speed: 2,
   });
   const [rainModalOpen, setRainModalOpen] = useState(false);
+  const rainSlidersRef = useRef<HTMLDivElement>(null);
+  const rainFirstRunRef = useRef(true);
+
+  // Reset the first-run flag whenever the rain modal mounts/unmounts so
+  // the next mount snaps to the correct initial state without animating.
+  useEffect(() => {
+    if (!rainModalOpen) rainFirstRunRef.current = true;
+  }, [rainModalOpen]);
+
+  // Animate the rain sliders' visibility when rainActive toggles.
+  // Uses useLayoutEffect so the initial collapsed state is applied
+  // before paint (no flash of expanded sliders on mount). Keyed on
+  // rainModalOpen too because the wrapper element only exists while
+  // the modal is mounted — the effect must re-run on modal open.
+  useLayoutEffect(() => {
+    if (!rainModalOpen) return;
+    const wrap = rainSlidersRef.current;
+    if (!wrap) return;
+    const rows = wrap.querySelectorAll<HTMLElement>(".rain-slider-row");
+
+    // First run after mount: snap to current rainActive state, no animation
+    if (rainFirstRunRef.current) {
+      rainFirstRunRef.current = false;
+      if (rainActive) {
+        gsap.set(wrap, { height: "auto", opacity: 1, overflow: "visible" });
+        gsap.set(rows, { y: 0, opacity: 1, clearProps: "transform" });
+      } else {
+        gsap.set(wrap, { height: 0, opacity: 0, overflow: "hidden" });
+        gsap.set(rows, { y: 18, opacity: 0 });
+      }
+      return;
+    }
+
+    if (rainActive) {
+      // Measure target height by temporarily setting height: auto
+      gsap.set(wrap, { height: "auto", overflow: "hidden" });
+      const target = wrap.offsetHeight;
+      gsap.fromTo(
+        wrap,
+        { height: 0, opacity: 0 },
+        {
+          height: target,
+          opacity: 1,
+          duration: 0.55,
+          ease: "power3.out",
+          onComplete: () => gsap.set(wrap, { height: "auto", overflow: "visible" }),
+        }
+      );
+      gsap.fromTo(
+        rows,
+        { y: 18, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.6,
+          ease: "elastic.out(1, 0.7)",
+          stagger: 0.08,
+          delay: 0.08,
+        }
+      );
+    } else {
+      gsap.set(wrap, { overflow: "hidden" });
+      gsap.to(rows, {
+        y: -10,
+        opacity: 0,
+        duration: 0.22,
+        ease: "power2.in",
+        stagger: { each: 0.04, from: "end" },
+      });
+      gsap.to(wrap, {
+        height: 0,
+        opacity: 0,
+        duration: 0.32,
+        ease: "power2.in",
+        delay: 0.1,
+      });
+    }
+  }, [rainActive, rainModalOpen]);
 
   // Search / filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -124,7 +261,30 @@ export default function Home() {
     if (!user) return;
     async function load() {
       try {
-        const [tasks, tags] = await Promise.all([fetchTasks(user!.id), fetchTags(user!.id)]);
+        // Ensure user has at least one space (migrates existing data on first run)
+        await ensureDefaultSpace(user!.id);
+
+        const [spacesList, tasks, tags] = await Promise.all([
+          fetchSpaces(user!.id),
+          fetchTasks(user!.id),
+          fetchTags(user!.id),
+        ]);
+
+        setSpaces(spacesList);
+
+        // Restore active space from localStorage (or default to ALL)
+        const stored =
+          typeof window !== "undefined"
+            ? localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)
+            : null;
+        if (
+          stored &&
+          (stored === ALL_SPACES || spacesList.some((s) => s.id === stored))
+        ) {
+          setActiveSpaceId(stored);
+        } else {
+          setActiveSpaceId(ALL_SPACES);
+        }
 
         // Build tag map
         const map: Record<string, PBTag> = {};
@@ -136,7 +296,13 @@ export default function Home() {
         for (const task of tasks) {
           const col = statusToColumn(task.status);
           if (b[col]) {
-            b[col].push({ id: task.id, title: task.title, tags: task.tags });
+            b[col].push({
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              space: task.space,
+              tags: task.tags,
+            });
           }
         }
         setBoard(b);
@@ -148,6 +314,56 @@ export default function Home() {
     }
     load();
   }, [user]);
+
+  // Persist active space selection
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!loading) {
+      localStorage.setItem(ACTIVE_SPACE_STORAGE_KEY, activeSpaceId);
+    }
+  }, [activeSpaceId, loading]);
+
+  // Called when ManageSpacesModal mutates spaces
+  const handleSpacesChanged = useCallback(
+    async (list: PBSpace[]) => {
+      setSpaces(list);
+      // If active space was deleted, fall back to All
+      if (
+        activeSpaceId !== ALL_SPACES &&
+        !list.some((s) => s.id === activeSpaceId)
+      ) {
+        setActiveSpaceId(ALL_SPACES);
+      }
+      // Reload tasks + tags in case spaces were deleted (cascade)
+      if (!user) return;
+      try {
+        const [tasks, tags] = await Promise.all([
+          fetchTasks(user.id),
+          fetchTags(user.id),
+        ]);
+        const map: Record<string, PBTag> = {};
+        for (const tag of tags) map[tag.id] = tag;
+        setTagMap(map);
+        const b: Board = { Backlog: [], "To Do": [], "In Progress": [], Done: [] };
+        for (const task of tasks) {
+          const col = statusToColumn(task.status);
+          if (b[col]) {
+            b[col].push({
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              space: task.space,
+              tags: task.tags,
+            });
+          }
+        }
+        setBoard(b);
+      } catch (err) {
+        console.error("Failed to reload after spaces change:", err);
+      }
+    },
+    [user, activeSpaceId]
+  );
 
   // Drag state — only the dragged task id is in React state (for drop indicators)
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -342,6 +558,8 @@ export default function Home() {
         setDropTarget(null);
         // Pre-populate form with existing task data
         setModalTitle(d.task.title);
+        setModalDescription(d.task.description || "");
+        setModalSpaceId(d.task.space || "");
         const taskTagNames = d.task.tags
           .map((id) => tagMapRef.current[id]?.name)
           .filter(Boolean) as string[];
@@ -468,8 +686,36 @@ export default function Home() {
   const closeModal = useCallback(() => {
     setEditingTask(null);
     setModalTitle("");
+    setModalDescription("");
+    setModalSpaceId("");
     setModalTags([]);
     setModalTagInput("");
+  }, []);
+
+  // When space changes in the modal, clear the tag selection (tags are space-scoped)
+  const handleModalSpaceChange = useCallback((newSpaceId: string) => {
+    setModalSpaceId((prev) => {
+      if (prev && prev !== newSpaceId) {
+        setModalTags([]);
+        setModalTagInput("");
+      }
+      return newSpaceId;
+    });
+  }, []);
+
+  // Tags available for the currently selected modal space.
+  // Strictly scoped: only tags whose space matches the selected space.
+  const modalSpaceTags = useMemo(() => {
+    if (!modalSpaceId) return [] as PBTag[];
+    return Object.values(tagMap)
+      .filter((t) => t.space === modalSpaceId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tagMap, modalSpaceId]);
+
+  const toggleModalTag = useCallback((name: string) => {
+    setModalTags((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
   }, []);
 
   const handleRemoveTag = useCallback((index: number) => {
@@ -492,13 +738,13 @@ export default function Home() {
 
   // ─── Save task (create or update) ──────────────
   const handleSaveTask = useCallback(async () => {
-    if (!modalTitle.trim() || saving) return;
+    if (!modalTitle.trim() || !modalSpaceId || saving) return;
     setSaving(true);
 
     try {
-      // Resolve tag names to IDs (find or create)
+      // Resolve tag names to IDs (find or create) — scoped to the task's space
       const resolvedTags = await Promise.all(
-        modalTags.map((name) => findOrCreateTag(name, user!.id))
+        modalTags.map((name) => findOrCreateTag(name, user!.id, modalSpaceId))
       );
       const tagIds = resolvedTags.map((t) => t.id);
 
@@ -514,12 +760,16 @@ export default function Home() {
         const { task, column } = editingTask as { task: Task; column: string };
         await updateTask(task.id, {
           title: modalTitle.trim(),
+          description: modalDescription,
+          space: modalSpaceId,
           tags: tagIds,
         });
 
         const updatedTask: Task = {
           id: task.id,
           title: modalTitle.trim(),
+          description: modalDescription,
+          space: modalSpaceId,
           tags: tagIds,
         };
 
@@ -534,8 +784,10 @@ export default function Home() {
         const backlogCount = board.Backlog.length;
         const pbTask = await createTask({
           title: modalTitle.trim(),
+          description: modalDescription,
           status: "backlog",
           tags: tagIds,
+          space: modalSpaceId,
           sort_order: backlogCount + 1,
           owner: user!.id,
         });
@@ -543,6 +795,8 @@ export default function Home() {
         const task: Task = {
           id: pbTask.id,
           title: pbTask.title,
+          description: pbTask.description,
+          space: pbTask.space,
           tags: pbTask.tags,
         };
 
@@ -558,7 +812,18 @@ export default function Home() {
     } finally {
       setSaving(false);
     }
-  }, [modalTitle, modalTags, saving, isEditing, editingTask, board.Backlog.length, closeModal]);
+  }, [
+    modalTitle,
+    modalDescription,
+    modalSpaceId,
+    modalTags,
+    saving,
+    isEditing,
+    editingTask,
+    board.Backlog.length,
+    closeModal,
+    user,
+  ]);
 
   // ─── Delete task (soft) ─────────────────────────
   const handleDeleteTask = useCallback(async () => {
@@ -605,10 +870,83 @@ export default function Home() {
         />
 
         {/* Header */}
-        <header className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
-            Control Centre
-          </h1>
+        <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex items-center justify-between gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4 min-w-0">
+            <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Control Centre
+            </h1>
+            {/* Space switcher */}
+            <GlassDropdown
+              size="sm"
+              width={200}
+              value={activeSpaceId}
+              options={[
+                {
+                  id: ALL_SPACES,
+                  label: "All Spaces",
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="7" height="7" />
+                      <rect x="14" y="3" width="7" height="7" />
+                      <rect x="3" y="14" width="7" height="7" />
+                      <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                  ),
+                },
+                ...spaces.map((s) => ({
+                  id: s.id,
+                  label: s.name + (s.is_default ? " ★" : ""),
+                  icon: (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        background: s.color,
+                        boxShadow: `0 0 6px ${s.color}`,
+                      }}
+                    />
+                  ),
+                })),
+                {
+                  id: "__manage__",
+                  label: "Manage Spaces...",
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                  ),
+                },
+              ]}
+              onChange={(opt) => {
+                if (opt.id === "__manage__") {
+                  setSpacesModalOpen(true);
+                } else {
+                  setActiveSpaceId(opt.id);
+                }
+              }}
+            />
+          </div>
           <FluidInput
             placeholder="Search tasks..."
             value={searchQuery}
@@ -647,8 +985,15 @@ export default function Home() {
 
             <GlassButton onClick={() => {
               setModalTitle("");
+              setModalDescription("");
               setModalTags([]);
               setModalTagInput("");
+              // Pre-fill space: current active, or the default space
+              const preferred =
+                activeSpaceId !== ALL_SPACES
+                  ? activeSpaceId
+                  : spaces.find((s) => s.is_default)?.id ?? spaces[0]?.id ?? "";
+              setModalSpaceId(preferred);
               setEditingTask("new");
             }}>
               <span className="flex items-center gap-2">
@@ -702,15 +1047,25 @@ export default function Home() {
           <div className="flex gap-5 h-full" style={{ display: loading ? "none" : undefined }}>
             {COLUMNS.map((column) => {
               const query = searchQuery.trim().toLowerCase();
+              // First filter by active space, then by search query
+              const spaceFiltered =
+                activeSpaceId === ALL_SPACES
+                  ? board[column]
+                  : board[column].filter((t) => t.space === activeSpaceId);
               const tasks = query
-                ? board[column].filter((t) => {
+                ? spaceFiltered.filter((t) => {
                     if (t.title.toLowerCase().includes(query)) return true;
+                    if (
+                      t.description &&
+                      t.description.toLowerCase().includes(query)
+                    )
+                      return true;
                     return t.tags.some((tagId) => {
                       const tag = tagMap[tagId];
                       return tag && tag.name.toLowerCase().includes(query);
                     });
                   })
-                : board[column];
+                : spaceFiltered;
               const visibleTasks = tasks.filter(
                 (t) => t.id !== draggedTaskId
               );
@@ -802,7 +1157,12 @@ export default function Home() {
                                 elasticity={0.2}
                                 shadowIntensity={0.8}
                               >
-                                <TaskCardContent task={task} tagMap={tagMap} />
+                                <TaskCardContent
+                                  task={task}
+                                  tagMap={tagMap}
+                                  spaceMap={spaceMap}
+                                  showSpacePill={activeSpaceId === ALL_SPACES}
+                                />
                               </LiquidGlassWrap>
                             </div>
                           </Fragment>
@@ -834,8 +1194,18 @@ export default function Home() {
       {/* Rain overlay */}
       <RainOverlay active={rainActive} config={rainConfig} cardRefs={cardRefs} />
 
+      {/* Manage spaces modal */}
+      {user && (
+        <ManageSpacesModal
+          open={spacesModalOpen}
+          onClose={() => setSpacesModalOpen(false)}
+          ownerId={user.id}
+          onSpacesChanged={handleSpacesChanged}
+        />
+      )}
+
       {/* Create / Edit task modal */}
-      <GlassModal open={modalOpen} onClose={closeModal}>
+      <GlassModal open={modalOpen} onClose={closeModal} width={840}>
         <h2
           className="text-xl font-bold tracking-tight mb-1"
           style={{ color: "var(--text-main, #fcfcfd)" }}
@@ -850,6 +1220,42 @@ export default function Home() {
         </p>
 
         <div className="flex flex-col gap-5">
+          {/* Space selector */}
+          <div>
+            <label
+              className="block text-xs font-bold uppercase tracking-widest mb-2"
+              style={{
+                color: "rgba(255, 255, 255, 0.7)",
+                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              }}
+            >
+              Space
+            </label>
+            <GlassDropdown
+              size="sm"
+              width={360}
+              value={modalSpaceId}
+              placeholder="Select a space..."
+              options={spaces.map((s) => ({
+                id: s.id,
+                label: s.name + (s.is_default ? " ★" : ""),
+                icon: (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 12,
+                      height: 12,
+                      borderRadius: "50%",
+                      background: s.color,
+                      boxShadow: `0 0 6px ${s.color}`,
+                    }}
+                  />
+                ),
+              }))}
+              onChange={(opt) => handleModalSpaceChange(opt.id)}
+            />
+          </div>
+
           <GlassFormField
             label="Title"
             placeholder="Task title..."
@@ -857,54 +1263,141 @@ export default function Home() {
             onChange={setModalTitle}
           />
 
-          {/* Tags */}
+          {/* Description */}
           <div>
             <label
               className="block text-xs font-bold uppercase tracking-widest mb-2"
-              style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              style={{
+                color: "rgba(255, 255, 255, 0.7)",
+                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              }}
             >
-              Tags
+              Description <span style={{ opacity: 0.5 }}>(markdown)</span>
             </label>
-
-            {modalTags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {modalTags.map((tag, i) => (
-                  <span
-                    key={i}
-                    className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
-                    style={{
-                      background: "rgba(99, 102, 241, 0.35)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                    onClick={() => handleRemoveTag(i)}
-                  >
-                    {tag}
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <GlassFormField
-              placeholder="Type a tag and press Enter..."
-              value={modalTagInput}
-              onChange={setModalTagInput}
-              onKeyDown={handleTagKeyDown}
+            <textarea
+              value={modalDescription}
+              onChange={(e) => setModalDescription(e.target.value)}
+              placeholder="Add a description... supports **bold**, *italic*, `code`, lists, links"
+              rows={4}
+              className="w-full bg-transparent outline-none resize-y rounded-2xl p-3"
+              style={{
+                fontSize: 14,
+                color: "#ffffff",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                boxShadow: "inset 0 2px 6px rgba(0,0,0,0.25)",
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              }}
             />
           </div>
 
-          <div className="flex items-center mt-2">
+          {/* Tags — chip toggle from space's pool + create-new */}
+          <div>
+            <label
+              className="block text-xs font-bold uppercase tracking-widest mb-2"
+              style={{
+                color: "rgba(255, 255, 255, 0.7)",
+                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              }}
+            >
+              Tags{" "}
+              {modalSpaceId && spaceMap[modalSpaceId] && (
+                <span style={{ opacity: 0.5 }}>
+                  in {spaceMap[modalSpaceId].name}
+                </span>
+              )}
+            </label>
+
+            {!modalSpaceId && (
+              <p
+                className="text-xs italic"
+                style={{ color: "rgba(255,255,255,0.4)" }}
+              >
+                Select a space first.
+              </p>
+            )}
+
+            {modalSpaceId && (
+              <>
+                {/* Selected tags (chips the user has picked) */}
+                {modalTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {modalTags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
+                        style={{
+                          background: "rgba(99, 102, 241, 0.45)",
+                          border: "1px solid rgba(255,255,255,0.2)",
+                        }}
+                        onClick={() => handleRemoveTag(i)}
+                      >
+                        {tag}
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Suggestions from the space's existing tag pool */}
+                {modalSpaceTags.filter((t) => !modalTags.includes(t.name))
+                  .length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {modalSpaceTags
+                      .filter((t) => !modalTags.includes(t.name))
+                      .map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => toggleModalTag(tag.name)}
+                          className="text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
+                          style={{
+                            background: hexToRgba(tag.color || "#6366f1", 0.2),
+                            border: "1px dashed rgba(255,255,255,0.2)",
+                            color: "rgba(255,255,255,0.85)",
+                          }}
+                        >
+                          + {tag.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                <GlassFormField
+                  placeholder="Type a tag and press Enter..."
+                  value={modalTagInput}
+                  onChange={setModalTagInput}
+                  onKeyDown={handleTagKeyDown}
+                />
+              </>
+            )}
+          </div>
+
+          <div
+            className="sticky flex items-center -mx-8 -mb-8 px-8 pt-4 pb-8 mt-2"
+            style={{
+              bottom: "-2rem",
+              background:
+                "linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0.25) 60%, transparent)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              borderBottomLeftRadius: 24,
+              borderBottomRightRadius: 24,
+              zIndex: 5,
+            }}
+          >
             {/* Delete button — only in edit mode */}
             {isEditing && (
               <GlassButton
@@ -968,7 +1461,7 @@ export default function Home() {
                 className="text-sm mt-1"
                 style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
               >
-                {rainActive ? "Rain is falling" : "Rain is paused"}
+                Make it Rain !
               </p>
             </div>
             <TactileSwitch
@@ -978,74 +1471,79 @@ export default function Home() {
             />
           </div>
 
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+          <div
+            ref={rainSlidersRef}
+            className="flex flex-col gap-6"
+          >
+            {/* Divider */}
+            <div className="rain-slider-row" style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
 
-          {/* Intensity */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
-              Intensity
-            </span>
-            <GlassSlider
-              value={rainConfig.intensity}
-              onChange={(v) => setRainConfig((prev) => ({ ...prev, intensity: v }))}
-              min={1} max={3} step={1}
-              showLabel
-              formatLabel={(v) => ["Drizzle", "Moderate", "Downpour"][v - 1]}
-              stepLabels={["Drizzle", "Moderate", "Downpour"]}
-              scale={0.9}
-            />
-          </div>
+            {/* Intensity */}
+            <div className="rain-slider-row flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Intensity
+              </span>
+              <GlassSlider
+                value={rainConfig.intensity}
+                onChange={(v) => setRainConfig((prev) => ({ ...prev, intensity: v }))}
+                min={1} max={3} step={1}
+                showLabel
+                formatLabel={(v) => ["Drizzle", "Moderate", "Downpour"][v - 1]}
+                stepLabels={["Drizzle", "Moderate", "Downpour"]}
+                scale={0.9}
+              />
+            </div>
 
-          {/* Wind */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
-              Wind
-            </span>
-            <GlassSlider
-              value={rainConfig.wind}
-              onChange={(v) => setRainConfig((prev) => ({ ...prev, wind: v }))}
-              min={-1} max={1} step={0.1}
-              showLabel
-              formatLabel={(v) => v === 0 ? "Calm" : v < 0 ? "Left" : "Right"}
-              stepLabels={["Left", "Calm", "Right"]}
-              scale={0.9}
-            />
-          </div>
+            {/* Wind */}
+            <div className="rain-slider-row flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Wind
+              </span>
+              <GlassSlider
+                value={rainConfig.wind}
+                onChange={(v) => setRainConfig((prev) => ({ ...prev, wind: v }))}
+                min={-1} max={1} step={0.1}
+                showLabel
+                formatLabel={(v) => v === 0 ? "Calm" : v < 0 ? "Left" : "Right"}
+                stepLabels={["Left", "Calm", "Right"]}
+                scale={0.9}
+              />
+            </div>
 
-          {/* Visibility */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
-              Visibility
-            </span>
-            <GlassSlider
-              value={rainConfig.opacity}
-              onChange={(v) => setRainConfig((prev) => ({ ...prev, opacity: v }))}
-              min={0.1} max={1} step={0.05}
-              showLabel
-              formatLabel={(v) => `${Math.round(v * 100)}%`}
-              stepLabels={["Subtle", "Full"]}
-              scale={0.9}
-            />
-          </div>
+            {/* Visibility */}
+            <div className="rain-slider-row flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Visibility
+              </span>
+              <GlassSlider
+                value={rainConfig.opacity}
+                onChange={(v) => setRainConfig((prev) => ({ ...prev, opacity: v }))}
+                min={0.1} max={1} step={0.05}
+                showLabel
+                formatLabel={(v) => `${Math.round(v * 100)}%`}
+                stepLabels={["Subtle", "Full"]}
+                scale={0.9}
+              />
+            </div>
 
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+            {/* Divider */}
+            <div className="rain-slider-row" style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
 
-          {/* Speed */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
-              Speed
-            </span>
-            <GlassSlider
-              value={rainConfig.speed}
-              onChange={(v) => setRainConfig((prev) => ({ ...prev, speed: v }))}
-              min={1} max={3} step={1}
-              showLabel
-              formatLabel={(v) => ["Slow", "Medium", "Fast"][v - 1]}
-              stepLabels={["Slow", "Medium", "Fast"]}
-              scale={0.9}
-            />
+            {/* Speed */}
+            <div className="rain-slider-row flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Speed
+              </span>
+              <GlassSlider
+                value={rainConfig.speed}
+                onChange={(v) => setRainConfig((prev) => ({ ...prev, speed: v }))}
+                min={1} max={3} step={1}
+                showLabel
+                formatLabel={(v) => ["Slow", "Medium", "Fast"][v - 1]}
+                stepLabels={["Slow", "Medium", "Fast"]}
+                scale={0.9}
+              />
+            </div>
           </div>
         </div>
       </GlassModal>

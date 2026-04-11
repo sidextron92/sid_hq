@@ -98,8 +98,6 @@ export default function GlassModal({
         className="absolute inset-0"
         style={{
           background: "rgba(0, 0, 0, 0.2)",
-          backdropFilter: "blur(4px) saturate(120%)",
-          WebkitBackdropFilter: "blur(4px) saturate(120%)",
           opacity: 0,
         }}
         onClick={animateClose}
@@ -115,12 +113,15 @@ export default function GlassModal({
           maxHeight: "calc(100vh - 64px)",
           opacity: 0,
           willChange: "transform, opacity",
+          borderRadius: 24,
+          backdropFilter: "blur(14px) saturate(130%)",
+          WebkitBackdropFilter: "blur(14px) saturate(130%)",
         }}
       >
         <LiquidGlassWrap
           cornerRadius={24}
           padding="0"
-          blurAmount={25}
+          blurAmount={50}
           displacementScale={60}
           saturation={160}
           shadowIntensity={1.8}

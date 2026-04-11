@@ -134,7 +134,7 @@ export default function GlassFormField({
               fontSize: 15,
               lineHeight: 1,
               padding: "14px 18px",
-              color: "rgba(255,255,255,0.85)",
+              color: "#ffffff",
               textShadow: "0 1px 4px rgba(0,0,0,0.5)",
             }}
           />

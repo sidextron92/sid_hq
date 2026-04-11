@@ -145,7 +145,7 @@ export default function FluidInput({
               fontSize: 16,
               lineHeight: 1,
               padding: 0,
-              color: "rgba(255,255,255,0.8)",
+              color: "#ffffff",
               textShadow: "0 1px 4px rgba(0,0,0,0.5)",
             }}
           />
