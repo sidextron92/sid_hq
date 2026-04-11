@@ -212,7 +212,9 @@ export default function Home() {
           opacity: 1,
           duration: 0.55,
           ease: "power3.out",
-          onComplete: () => gsap.set(wrap, { height: "auto", overflow: "visible" }),
+          onComplete: () => {
+            gsap.set(wrap, { height: "auto", overflow: "visible" });
+          },
         }
       );
       gsap.fromTo(
