@@ -490,6 +490,24 @@ export default function Home() {
       el.style.margin = "0";
       el.style.touchAction = "none";
 
+      // Lock the page so the browser can't scroll while dragging.
+      // touchAction on the card alone is insufficient because the browser
+      // already committed to a pan gesture at touchstart — we need a
+      // non-passive touchmove listener that calls preventDefault().
+      const prevHtmlOverflow = document.documentElement.style.overflow;
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevHtmlTouchAction = document.documentElement.style.touchAction;
+      const prevBodyTouchAction = document.body.style.touchAction;
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.touchAction = "none";
+      document.body.style.touchAction = "none";
+
+      const blockTouchMove = (ev: TouchEvent) => {
+        if (ev.cancelable) ev.preventDefault();
+      };
+      document.addEventListener("touchmove", blockTouchMove, { passive: false });
+
       gsap.to(el, {
         scale: 1.05,
         duration: 0.3,
@@ -599,6 +617,11 @@ export default function Home() {
         document.removeEventListener("pointermove", handleMove);
         document.removeEventListener("pointerup", handleUp);
         document.removeEventListener("pointercancel", handleUp);
+        document.removeEventListener("touchmove", blockTouchMove);
+        document.documentElement.style.overflow = prevHtmlOverflow;
+        document.body.style.overflow = prevBodyOverflow;
+        document.documentElement.style.touchAction = prevHtmlTouchAction;
+        document.body.style.touchAction = prevBodyTouchAction;
         stopAutoScroll();
 
         const d = dragRef.current;
