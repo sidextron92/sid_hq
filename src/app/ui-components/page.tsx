@@ -186,7 +186,6 @@ export default function UIComponents() {
   const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
-  const sceneRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);
 
   // Pick the scene renderer matching the current background mode.
@@ -202,8 +201,8 @@ export default function UIComponents() {
   return (
     <>
     <div ref={captureRef} className="min-h-screen bg-background relative overflow-hidden">
-      {/* Scene (grid+orbs / wallpaper / video) — same function used by refractive cards */}
-      <div ref={sceneRef} className="absolute inset-0 z-0">{renderScene()}</div>
+      {/* Scene (grid+orbs / wallpaper / video) */}
+      <div className="absolute inset-0 z-0">{renderScene()}</div>
 
       {/* Header */}
       <header className="relative z-10 px-8 pt-12 pb-6 flex items-start justify-between">

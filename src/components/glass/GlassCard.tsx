@@ -68,6 +68,9 @@ export default function GlassCard({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const cloneInnerRef = useRef<HTMLDivElement>(null);
+  const glowRef = useRef<HTMLSpanElement>(null);
+  const borderScreenRef = useRef<HTMLSpanElement>(null);
+  const borderOverlayRef = useRef<HTMLSpanElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [maps, setMaps] = useState<GlassMapResult | null>(null);
   const dragState = useRef({ isDragging: false, lastX: 0, lastY: 0 });
@@ -236,6 +239,49 @@ export default function GlassCard({
     });
   }, [refractive, updateClonePosition]);
 
+  // Cursor-following radial glow + dynamic border shine for the refractive path.
+  // We update DOM styles directly (via refs) rather than React state so we don't
+  // trigger a re-render on every mouse move.
+  const handleCardMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!refractive || !cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const offX = ((e.clientX - cx) / rect.width) * 100;
+    const offY = ((e.clientY - cy) / rect.height) * 100;
+    const posX = ((e.clientX - rect.left) / rect.width) * 100;
+    const posY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    if (glowRef.current) {
+      glowRef.current.style.background = `radial-gradient(circle at ${posX}% ${posY}%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)`;
+    }
+
+    const gradAngle = 135 + offX * 1.2;
+    const gradStop1 = Math.max(10, 33 + offY * 0.3);
+    const gradStop2 = Math.min(90, 66 + offY * 0.4);
+    const screenA1 = 0.12 + Math.abs(offX) * 0.008;
+    const screenA2 = 0.4 + Math.abs(offX) * 0.012;
+    const overlayA1 = 0.32 + Math.abs(offX) * 0.008;
+    const overlayA2 = 0.6 + Math.abs(offX) * 0.012;
+
+    if (borderScreenRef.current) {
+      borderScreenRef.current.style.background = `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${screenA1}) ${gradStop1}%, rgba(255,255,255,${screenA2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`;
+    }
+    if (borderOverlayRef.current) {
+      borderOverlayRef.current.style.background = `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${overlayA1}) ${gradStop1}%, rgba(255,255,255,${overlayA2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`;
+    }
+  }, [refractive]);
+
+  const handleCardMouseEnter = useCallback(() => {
+    if (!refractive || !glowRef.current) return;
+    glowRef.current.style.opacity = "1";
+  }, [refractive]);
+
+  const handleCardMouseLeave = useCallback(() => {
+    if (!refractive || !glowRef.current) return;
+    glowRef.current.style.opacity = "0";
+  }, [refractive]);
+
   // Non-refractive path — original implementation
   if (!refractive) {
     return (
@@ -276,6 +322,9 @@ export default function GlassCard({
       <div
         ref={cardRef}
         className={`relative ${className}`}
+        onMouseEnter={handleCardMouseEnter}
+        onMouseMove={handleCardMouseMove}
+        onMouseLeave={handleCardMouseLeave}
         style={{
           borderRadius: cornerRadius,
           padding,
@@ -378,8 +427,24 @@ export default function GlassCard({
           }}
         />
 
-        {/* Border shine (screen) */}
+        {/* Radial glow that follows the cursor (mix-blend: overlay) */}
         <span
+          ref={glowRef}
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            borderRadius: "inherit",
+            background:
+              "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)",
+            opacity: 0,
+            transition: "opacity 0.2s ease-out",
+            mixBlendMode: "overlay",
+            zIndex: 1,
+          }}
+        />
+
+        {/* Border shine (screen) — gradient shifts with cursor */}
+        <span
+          ref={borderScreenRef}
           className="absolute inset-0 pointer-events-none"
           style={{
             borderRadius: "inherit",
@@ -398,8 +463,9 @@ export default function GlassCard({
           }}
         />
 
-        {/* Border shine (overlay) */}
+        {/* Border shine (overlay) — gradient shifts with cursor */}
         <span
+          ref={borderOverlayRef}
           className="absolute inset-0 pointer-events-none"
           style={{
             borderRadius: "inherit",
