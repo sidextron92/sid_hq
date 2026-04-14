@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -23,6 +23,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // PWA standalone mode can block autoPlay even with muted+playsInline.
+  // Explicitly call play() after mount to ensure the video starts.
+  useEffect(() => {
+    videoRef.current?.play().catch(() => {});
+  }, []);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -137,13 +144,16 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center">
       {/* Video background */}
       <video
+        ref={videoRef}
         className="absolute inset-0 z-0 w-full h-full object-cover"
-        src="/background.mp4"
         autoPlay
         loop
         muted
         playsInline
-      />
+        preload="auto"
+      >
+        <source src="/background.webm" type="video/webm" />
+      </video>
 
       {/* Dim overlay */}
       <div

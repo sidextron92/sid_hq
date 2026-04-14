@@ -496,7 +496,8 @@ export default function Home() {
       }
     }
     load();
-  }, [user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Persist active space selection
   useEffect(() => {
