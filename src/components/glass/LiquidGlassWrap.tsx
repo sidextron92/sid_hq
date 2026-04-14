@@ -254,21 +254,15 @@ export default function LiquidGlassWrap({
       )}
 
       {/* Layer 2: Glass — backdrop-filter for frost, CSS filter for SVG displacement */}
-      {/* On mobile, backdrop-filter breaks inside overflow:hidden/auto containers (WebKit bug).
-          Fall back to a semi-transparent background that simulates the frosted look. */}
       <span
         className="absolute inset-0 rounded-[inherit]"
-        style={
-          isTouchDevice
-            ? {
-                background: `rgba(0, 0, 0, ${Math.min(0.55, 0.15 + blurAmount * 0.01)})`,
-              }
-            : {
-                backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-                WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-                filter: `url(#${filterId})`,
-              }
-        }
+        style={{
+          backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
+          WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
+          ...(isTouchDevice
+            ? { WebkitTransform: "translate3d(0,0,0)" }
+            : { filter: `url(#${filterId})` }),
+        }}
       />
 
       {/* Layer 3: Hover highlight — radial glow that follows cursor */}
