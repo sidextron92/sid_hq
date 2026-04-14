@@ -2,8 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import TiptapEditor, { stripHtml } from "@/components/TiptapEditor";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -91,7 +90,7 @@ function TaskCardContent({
       </div>
       {task.description && task.description.trim().length > 0 && (
         <div
-          className="task-md-excerpt text-sm mb-2 break-words overflow-hidden"
+          className="text-sm mb-2 break-words overflow-hidden"
           style={{
             color: "rgba(255,255,255,0.75)",
             display: "-webkit-box",
@@ -99,9 +98,7 @@ function TaskCardContent({
             WebkitBoxOrient: "vertical",
           }}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {task.description}
-          </ReactMarkdown>
+          {stripHtml(task.description)}
         </div>
       )}
       {task.tags.length > 0 && (
@@ -150,6 +147,7 @@ export default function Home() {
   const [modalSpaceId, setModalSpaceId] = useState<string>("");
   const [modalTagInput, setModalTagInput] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]); // tag names
+  const [tagEditOpen, setTagEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -397,9 +395,13 @@ export default function Home() {
   const boardRef = useRef(board);
   const dropTargetRef = useRef(dropTarget);
   const tagMapRef = useRef(tagMap);
+  const activeSpaceIdRef = useRef(activeSpaceId);
+  const searchQueryRef = useRef(searchQuery);
   boardRef.current = board;
   dropTargetRef.current = dropTarget;
   tagMapRef.current = tagMap;
+  activeSpaceIdRef.current = activeSpaceId;
+  searchQueryRef.current = searchQuery;
 
   // FLIP animation refs
   const animCardId = useRef<string | null>(null);
@@ -541,7 +543,24 @@ export default function Home() {
               : Math.abs(ev.clientX - cx);
           if (dist < bestDist) {
             bestDist = dist;
-            const colTasks = boardRef.current[col].filter(
+            const spaceId = activeSpaceIdRef.current;
+            const query = searchQueryRef.current.trim().toLowerCase();
+            const spaceTasks =
+              spaceId === ALL_SPACES
+                ? boardRef.current[col]
+                : boardRef.current[col].filter((t) => t.space === spaceId);
+            const filtered = query
+              ? spaceTasks.filter((t) => {
+                  if (t.title.toLowerCase().includes(query)) return true;
+                  if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+                  const tm = tagMapRef.current;
+                  return t.tags.some((tagId) => {
+                    const tag = tm[tagId];
+                    return tag && tag.name.toLowerCase().includes(query);
+                  });
+                })
+              : spaceTasks;
+            const colTasks = filtered.filter(
               (t) => t.id !== d.taskId
             );
             let insertIndex = colTasks.length;
@@ -654,8 +673,35 @@ export default function Home() {
             for (const col of COLUMNS) {
               next[col] = prev[col].filter((t) => t.id !== d.taskId);
             }
-            const target = [...next[dt.column]];
-            target.splice(dt.index, 0, d.task);
+            const targetAll = next[dt.column];
+
+            // Map the filtered drop index to the correct position in the full array
+            const spaceId = activeSpaceIdRef.current;
+            const query = searchQueryRef.current.trim().toLowerCase();
+            const targetFiltered = targetAll.filter((t) => {
+              if (spaceId !== ALL_SPACES && t.space !== spaceId) return false;
+              if (query) {
+                if (t.title.toLowerCase().includes(query)) return true;
+                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+                const tm = tagMapRef.current;
+                return t.tags.some((tagId) => {
+                  const tag = tm[tagId];
+                  return tag && tag.name.toLowerCase().includes(query);
+                });
+              }
+              return true;
+            });
+
+            let realIndex: number;
+            if (dt.index >= targetFiltered.length) {
+              realIndex = targetAll.length;
+            } else {
+              const refTask = targetFiltered[dt.index];
+              realIndex = targetAll.indexOf(refTask);
+            }
+
+            const target = [...targetAll];
+            target.splice(realIndex, 0, d.task);
             next[dt.column] = target;
 
             reorderColumn(dt.column, target.map((t) => t.id)).catch((err) =>
@@ -866,6 +912,7 @@ export default function Home() {
     setModalSpaceId("");
     setModalTags([]);
     setModalTagInput("");
+    setTagEditOpen(false);
   }, []);
 
   // When space changes in the modal, clear the tag selection (tags are space-scoped)
@@ -1233,7 +1280,7 @@ export default function Home() {
                     if (t.title.toLowerCase().includes(query)) return true;
                     if (
                       t.description &&
-                      t.description.toLowerCase().includes(query)
+                      stripHtml(t.description).toLowerCase().includes(query)
                     )
                       return true;
                     return t.tags.some((tagId) => {
@@ -1400,40 +1447,168 @@ export default function Home() {
         </p>
 
         <div className="flex flex-col gap-5">
-          {/* Space selector */}
-          <div>
-            <label
-              className="block text-xs font-bold uppercase tracking-widest mb-2"
-              style={{
-                color: "rgba(255, 255, 255, 0.7)",
-                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-              }}
-            >
-              Space
-            </label>
-            <GlassDropdown
-              size="sm"
-              width={360}
-              value={modalSpaceId}
-              placeholder="Select a space..."
-              options={spaces.map((s) => ({
-                id: s.id,
-                label: s.name + (s.is_default ? " ★" : ""),
-                icon: (
+          {/* Space + Tags row */}
+          <div className="flex flex-wrap items-start gap-5">
+            {/* Space selector */}
+            <div>
+              <label
+                className="block text-xs font-bold uppercase tracking-widest mb-2"
+                style={{
+                  color: "rgba(255, 255, 255, 0.7)",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                }}
+              >
+                Space
+              </label>
+              <GlassDropdown
+                size="sm"
+                width={360}
+                value={modalSpaceId}
+                placeholder="Select a space..."
+                options={spaces.map((s) => ({
+                  id: s.id,
+                  label: s.name + (s.is_default ? " ★" : ""),
+                  icon: (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        background: s.color,
+                        boxShadow: `0 0 6px ${s.color}`,
+                      }}
+                    />
+                  ),
+                }))}
+                onChange={(opt) => handleModalSpaceChange(opt.id)}
+              />
+            </div>
+
+            {/* Tags */}
+            <div className="flex-1 min-w-0">
+              <label
+                className="block text-xs font-bold uppercase tracking-widest mb-2"
+                style={{
+                  color: "rgba(255, 255, 255, 0.7)",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                }}
+              >
+                Tags
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {/* Selected tag chips */}
+                {modalTags.map((tag, i) => (
                   <span
+                    key={i}
+                    className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
                     style={{
-                      display: "inline-block",
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      background: s.color,
-                      boxShadow: `0 0 6px ${s.color}`,
+                      background: "rgba(99, 102, 241, 0.45)",
+                      border: "1px solid rgba(255,255,255,0.2)",
                     }}
+                    onClick={() => handleRemoveTag(i)}
+                  >
+                    {tag}
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </span>
+                ))}
+
+                {/* Suggestions from the space's existing tag pool */}
+                {modalSpaceId &&
+                  modalSpaceTags
+                    .filter((t) => !modalTags.includes(t.name))
+                    .map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleModalTag(tag.name)}
+                        className="text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
+                        style={{
+                          background: hexToRgba(tag.color || "#6366f1", 0.2),
+                          border: "1px dashed rgba(255,255,255,0.2)",
+                          color: "rgba(255,255,255,0.85)",
+                        }}
+                      >
+                        + {tag.name}
+                      </button>
+                    ))}
+
+                {/* Edit icon to toggle new tag input */}
+                {modalSpaceId && (
+                  <button
+                    type="button"
+                    onClick={() => setTagEditOpen((v) => !v)}
+                    className="flex items-center justify-center rounded-full cursor-pointer select-none"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      background: tagEditOpen
+                        ? "rgba(99, 102, 241, 0.4)"
+                        : "rgba(255, 255, 255, 0.1)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      transition: "background 0.2s ease",
+                    }}
+                    title="Add new tag"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ color: "rgba(255,255,255,0.7)" }}
+                    >
+                      {tagEditOpen ? (
+                        <>
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </>
+                      ) : (
+                        <>
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                )}
+
+                {!modalSpaceId && modalTags.length === 0 && (
+                  <span
+                    className="text-xs italic"
+                    style={{ color: "rgba(255,255,255,0.4)" }}
+                  >
+                    Select a space first
+                  </span>
+                )}
+              </div>
+
+              {/* Expandable new tag input */}
+              {tagEditOpen && modalSpaceId && (
+                <div className="mt-3">
+                  <GlassFormField
+                    placeholder="Type a new tag and press Enter..."
+                    value={modalTagInput}
+                    onChange={setModalTagInput}
+                    onKeyDown={handleTagKeyDown}
                   />
-                ),
-              }))}
-              onChange={(opt) => handleModalSpaceChange(opt.id)}
-            />
+                </div>
+              )}
+            </div>
           </div>
 
           <GlassFormField
@@ -1452,117 +1627,12 @@ export default function Home() {
                 textShadow: "0 1px 4px rgba(0,0,0,0.5)",
               }}
             >
-              Description <span style={{ opacity: 0.5 }}>(markdown)</span>
+              Description
             </label>
-            <textarea
-              value={modalDescription}
-              onChange={(e) => setModalDescription(e.target.value)}
-              placeholder="Add a description... supports **bold**, *italic*, `code`, lists, links"
-              rows={4}
-              className="w-full bg-transparent outline-none resize-y rounded-2xl p-3"
-              style={{
-                fontSize: 14,
-                color: "#ffffff",
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                boxShadow: "inset 0 2px 6px rgba(0,0,0,0.25)",
-                fontFamily:
-                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              }}
+            <TiptapEditor
+              content={modalDescription}
+              onChange={setModalDescription}
             />
-          </div>
-
-          {/* Tags — chip toggle from space's pool + create-new */}
-          <div>
-            <label
-              className="block text-xs font-bold uppercase tracking-widest mb-2"
-              style={{
-                color: "rgba(255, 255, 255, 0.7)",
-                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-              }}
-            >
-              Tags{" "}
-              {modalSpaceId && spaceMap[modalSpaceId] && (
-                <span style={{ opacity: 0.5 }}>
-                  in {spaceMap[modalSpaceId].name}
-                </span>
-              )}
-            </label>
-
-            {!modalSpaceId && (
-              <p
-                className="text-xs italic"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              >
-                Select a space first.
-              </p>
-            )}
-
-            {modalSpaceId && (
-              <>
-                {/* Selected tags (chips the user has picked) */}
-                {modalTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {modalTags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
-                        style={{
-                          background: "rgba(99, 102, 241, 0.45)",
-                          border: "1px solid rgba(255,255,255,0.2)",
-                        }}
-                        onClick={() => handleRemoveTag(i)}
-                      >
-                        {tag}
-                        <svg
-                          width="10"
-                          height="10"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                        >
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Suggestions from the space's existing tag pool */}
-                {modalSpaceTags.filter((t) => !modalTags.includes(t.name))
-                  .length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {modalSpaceTags
-                      .filter((t) => !modalTags.includes(t.name))
-                      .map((tag) => (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          onClick={() => toggleModalTag(tag.name)}
-                          className="text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
-                          style={{
-                            background: hexToRgba(tag.color || "#6366f1", 0.2),
-                            border: "1px dashed rgba(255,255,255,0.2)",
-                            color: "rgba(255,255,255,0.85)",
-                          }}
-                        >
-                          + {tag.name}
-                        </button>
-                      ))}
-                  </div>
-                )}
-
-                <GlassFormField
-                  placeholder="Type a tag and press Enter..."
-                  value={modalTagInput}
-                  onChange={setModalTagInput}
-                  onKeyDown={handleTagKeyDown}
-                />
-              </>
-            )}
           </div>
 
           <div
