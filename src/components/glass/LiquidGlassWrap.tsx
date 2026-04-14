@@ -254,13 +254,18 @@ export default function LiquidGlassWrap({
       )}
 
       {/* Layer 2: Glass — backdrop-filter for frost, CSS filter for SVG displacement */}
+      {/* On mobile, add a tinted background as fallback for WebKit's backdrop-filter
+          bug in overflow:hidden/auto scroll containers. Desktop uses pure backdrop blur. */}
       <span
         className="absolute inset-0 rounded-[inherit]"
         style={{
           backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
           WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
           ...(isTouchDevice
-            ? { WebkitTransform: "translate3d(0,0,0)" }
+            ? {
+                WebkitTransform: "translate3d(0,0,0)",
+                background: `rgba(20, 20, 25, ${Math.min(0.65, 0.3 + blurAmount * 0.005)})`,
+              }
             : { filter: `url(#${filterId})` }),
         }}
       />
