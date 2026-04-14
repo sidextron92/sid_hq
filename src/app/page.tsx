@@ -389,6 +389,10 @@ export default function Home() {
     startRect: DOMRect;
     offsetX: number;
     offsetY: number;
+    prevX: number;
+    prevY: number;
+    tiltX: number;
+    tiltY: number;
   } | null>(null);
 
   // Mirror state in refs for event handlers
@@ -406,6 +410,7 @@ export default function Home() {
   // FLIP animation refs
   const animCardId = useRef<string | null>(null);
   const preDropRect = useRef<{ x: number; y: number } | null>(null);
+  const preDropTilt = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Auto-scroll state during drag (for mobile / horizontally-scrolled board)
   const autoScrollRAF = useRef<number | null>(null);
@@ -464,6 +469,10 @@ export default function Home() {
         startRect: rect,
         offsetX: clientX - rect.left,
         offsetY: clientY - rect.top,
+        prevX: clientX,
+        prevY: clientY,
+        tiltX: 0,
+        tiltY: 0,
       };
 
       setDraggedTaskId(task.id);
@@ -510,8 +519,11 @@ export default function Home() {
       };
       document.addEventListener("touchmove", blockTouchMove, { passive: false });
 
+      el.style.transformStyle = "preserve-3d";
+      el.style.perspective = "600px";
       gsap.to(el, {
         scale: 1.05,
+        boxShadow: "0 20px 60px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3)",
         duration: 0.3,
         ease: "back.out(1.7)",
       });
@@ -524,6 +536,24 @@ export default function Home() {
 
         d.el.style.left = `${ev.clientX - d.offsetX}px`;
         d.el.style.top = `${ev.clientY - d.offsetY}px`;
+
+        // 3D tilt based on pointer velocity
+        const dx = ev.clientX - d.prevX;
+        const dy = ev.clientY - d.prevY;
+        const MAX_TILT = 12;
+        const SMOOTHING = 0.25;
+        // rotateY follows horizontal movement, rotateX opposes vertical
+        const targetTiltY = Math.max(-MAX_TILT, Math.min(MAX_TILT, dx * 1.5));
+        const targetTiltX = Math.max(-MAX_TILT, Math.min(MAX_TILT, -dy * 1.5));
+        d.tiltY += (targetTiltY - d.tiltY) * SMOOTHING;
+        d.tiltX += (targetTiltX - d.tiltX) * SMOOTHING;
+        d.prevX = ev.clientX;
+        d.prevY = ev.clientY;
+        gsap.set(d.el, {
+          rotateX: d.tiltX,
+          rotateY: d.tiltY,
+          transformPerspective: 600,
+        });
 
         // Find column under pointer (with horizontal tolerance for narrow viewports)
         let newDrop: { column: string; index: number } | null = null;
@@ -650,6 +680,7 @@ export default function Home() {
         const currentRect = d.el.getBoundingClientRect();
         preDropRect.current = { x: currentRect.left, y: currentRect.top };
         animCardId.current = d.taskId;
+        preDropTilt.current = { x: d.tiltX, y: d.tiltY };
 
         gsap.set(d.el, { clearProps: "all" });
         d.el.style.position = "";
@@ -661,6 +692,8 @@ export default function Home() {
         d.el.style.margin = "";
         d.el.style.willChange = "";
         d.el.style.touchAction = "";
+        d.el.style.transformStyle = "";
+        d.el.style.perspective = "";
 
         if (d.placeholder.parentElement) {
           d.placeholder.parentElement.insertBefore(d.el, d.placeholder);
@@ -734,15 +767,27 @@ export default function Home() {
             const dx = from.x - to.left;
             const dy = from.y - to.top;
 
+            const tilt = preDropTilt.current;
             if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
               gsap.fromTo(
                 cardEl,
-                { x: dx, y: dy, scale: 1.05 },
+                {
+                  x: dx,
+                  y: dy,
+                  scale: 1.05,
+                  rotateX: tilt.x,
+                  rotateY: tilt.y,
+                  transformPerspective: 600,
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3)",
+                },
                 {
                   x: 0,
                   y: 0,
                   scale: 1,
-                  duration: 0.4,
+                  rotateX: 0,
+                  rotateY: 0,
+                  boxShadow: "none",
+                  duration: 0.5,
                   ease: "power2.out",
                   clearProps: "all",
                   onComplete: () => {
@@ -754,6 +799,9 @@ export default function Home() {
             } else {
               gsap.to(cardEl, {
                 scale: 1,
+                rotateX: 0,
+                rotateY: 0,
+                boxShadow: "none",
                 duration: 0.3,
                 ease: "elastic.out(1, 0.5)",
                 clearProps: "all",
