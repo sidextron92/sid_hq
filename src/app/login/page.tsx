@@ -138,7 +138,7 @@ export default function LoginPage() {
       {/* Video background */}
       <video
         className="absolute inset-0 z-0 w-full h-full object-cover"
-        src="/background.webm"
+        src="/background.mp4"
         autoPlay
         loop
         muted

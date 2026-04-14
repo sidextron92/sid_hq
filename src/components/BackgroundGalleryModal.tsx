@@ -123,7 +123,7 @@ export default function BackgroundGalleryModal({
               <div className="relative aspect-video">
                 <video
                   className="w-full h-full object-cover"
-                  src="/background.webm"
+                  src="/background.mp4"
                   muted
                   playsInline
                   autoPlay

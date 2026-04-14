@@ -60,7 +60,9 @@ export default function LayeredFAB({
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
 
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+    // Higher threshold on touch to avoid tap jitter triggering drag
+    const threshold = e.pointerType === "touch" ? 12 : 4;
+    if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
       didDrag.current = true;
     }
     if (!didDrag.current) return;
@@ -242,6 +244,7 @@ export default function LayeredFAB({
           pointerEvents: "none",
           minWidth: 180,
         }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <LiquidGlassWrap
           cornerRadius={20}

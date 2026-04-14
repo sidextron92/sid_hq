@@ -116,7 +116,7 @@ function renderVideoScene() {
   return (
     <video
       className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-      src="/background.webm"
+      src="/background.mp4"
       autoPlay
       loop
       muted

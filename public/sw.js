@@ -38,7 +38,7 @@ registerRoute(
 
 // ── 3. Cache-First: default background video ──
 registerRoute(
-  ({ url }) => url.pathname === "/background.webm",
+  ({ url }) => url.pathname === "/background.mp4",
   new CacheFirst({
     cacheName: "local-media",
     plugins: [
