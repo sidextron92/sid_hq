@@ -167,6 +167,9 @@ export default function Home() {
   const [rainModalOpen, setRainModalOpen] = useState(false);
   const rainSlidersRef = useRef<HTMLDivElement>(null);
   const rainFirstRunRef = useRef(true);
+  const [rainVolume, setRainVolume] = useState(0.5);
+  const rainAudioRef = useRef<HTMLAudioElement | null>(null);
+  const rainFadeRef = useRef<ReturnType<typeof gsap.to> | null>(null);
 
   // Reset the first-run flag whenever the rain modal mounts/unmounts so
   // the next mount snaps to the correct initial state without animating.
@@ -245,6 +248,48 @@ export default function Home() {
       });
     }
   }, [rainActive, rainModalOpen]);
+
+  // Rain sound: play/fade tied to rainActive, volume synced live
+  useEffect(() => {
+    if (rainActive) {
+      // Kill any in-progress fade-out
+      if (rainFadeRef.current) {
+        rainFadeRef.current.kill();
+        rainFadeRef.current = null;
+      }
+      if (!rainAudioRef.current) {
+        const audio = new Audio("/sounds/rain.mp3");
+        audio.loop = true;
+        audio.volume = rainVolume;
+        rainAudioRef.current = audio;
+      }
+      const audio = rainAudioRef.current;
+      audio.volume = rainVolume;
+      audio.play().catch(() => {/* autoplay blocked — user will interact */});
+    } else if (rainAudioRef.current) {
+      // Fade out over 1s then pause
+      const audio = rainAudioRef.current;
+      const obj = { vol: audio.volume };
+      rainFadeRef.current = gsap.to(obj, {
+        vol: 0,
+        duration: 1,
+        ease: "power2.out",
+        onUpdate: () => { audio.volume = obj.vol; },
+        onComplete: () => {
+          audio.pause();
+          audio.currentTime = 0;
+          rainFadeRef.current = null;
+        },
+      });
+    }
+  }, [rainActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync volume slider to audio in real-time
+  useEffect(() => {
+    if (rainAudioRef.current && rainActive) {
+      rainAudioRef.current.volume = rainVolume;
+    }
+  }, [rainVolume, rainActive]);
 
   // Search / filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -1839,6 +1884,25 @@ export default function Home() {
                 showLabel
                 formatLabel={(v) => ["Slow", "Medium", "Fast"][v - 1]}
                 stepLabels={["Slow", "Medium", "Fast"]}
+                scale={0.9}
+              />
+            </div>
+
+            {/* Divider */}
+            <div className="rain-slider-row" style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+
+            {/* Rain Sound Volume */}
+            <div className="rain-slider-row flex flex-col gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Rain Sound
+              </span>
+              <GlassSlider
+                value={rainVolume}
+                onChange={setRainVolume}
+                min={0} max={1} step={0.05}
+                showLabel
+                formatLabel={(v) => `${Math.round(v * 100)}%`}
+                stepLabels={["Mute", "Full"]}
                 scale={0.9}
               />
             </div>
