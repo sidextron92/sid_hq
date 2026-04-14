@@ -1506,7 +1506,7 @@ export default function Home() {
                   ref={(el) => {
                     columnRefs.current[column] = el;
                   }}
-                  className="flex flex-col h-full rounded-2xl overflow-hidden min-w-[220px] flex-1"
+                  className="flex flex-col h-full rounded-2xl overflow-clip min-w-[220px] flex-1"
                   style={{
                     border: "1px solid rgba(255, 255, 255, 0.06)",
                     background: "rgba(0, 0, 0, 0.1)",
