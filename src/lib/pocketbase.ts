@@ -1,6 +1,13 @@
 import PocketBase, { RecordModel } from "pocketbase";
 
-const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_URL);
+// Use same-origin proxy in the browser so the service worker can cache requests.
+// On the server (SSR) fall back to the direct PocketBase URL.
+const pbUrl =
+  typeof window !== "undefined"
+    ? "/pb"
+    : process.env.NEXT_PUBLIC_POCKETBASE_URL;
+
+const pb = new PocketBase(pbUrl);
 
 // Disable auto-cancellation so concurrent requests don't cancel each other
 pb.autoCancellation(false);
