@@ -18,6 +18,7 @@ import gsap from "gsap";
 import { useAuth } from "@/context/AuthContext";
 import RainOverlay, { type RainConfig } from "@/components/RainOverlay";
 import ManageSpacesModal from "@/components/ManageSpacesModal";
+import BackgroundGalleryModal from "@/components/BackgroundGalleryModal";
 import {
   fetchTasks,
   fetchTags,
@@ -29,8 +30,11 @@ import {
   findOrCreateTag,
   reorderColumn,
   statusToColumn,
+  getUserBackground,
+  setUserBackground,
   type PBTag,
   type PBSpace,
+  type PBBackground,
 } from "@/lib/pocketbase";
 
 const ALL_SPACES = "__all__";
@@ -159,6 +163,10 @@ export default function Home() {
     return m;
   }, [spaces]);
 
+  // Background gallery
+  const [bgGalleryOpen, setBgGalleryOpen] = useState(false);
+  const [activeBackground, setActiveBackground] = useState<PBBackground | null>(null);
+
   // Rain overlay
   const [rainActive, setRainActive] = useState(false);
   const [rainConfig, setRainConfig] = useState<RainConfig>({
@@ -169,7 +177,10 @@ export default function Home() {
   const rainSlidersRef = useRef<HTMLDivElement>(null);
   const rainFirstRunRef = useRef(true);
   const [rainVolume, setRainVolume] = useState(0.5);
-  const rainAudioRef = useRef<HTMLAudioElement | null>(null);
+  const rainCtxRef = useRef<AudioContext | null>(null);
+  const rainGainRef = useRef<GainNode | null>(null);
+  const rainSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const rainBufferRef = useRef<AudioBuffer | null>(null);
   const rainFadeRef = useRef<ReturnType<typeof gsap.to> | null>(null);
 
   // Reset the first-run flag whenever the rain modal mounts/unmounts so
@@ -250,7 +261,7 @@ export default function Home() {
     }
   }, [rainActive, rainModalOpen]);
 
-  // Rain sound: play/fade tied to rainActive, volume synced live
+  // Rain sound: gapless Web Audio API loop tied to rainActive
   useEffect(() => {
     if (rainActive) {
       // Kill any in-progress fade-out
@@ -258,37 +269,68 @@ export default function Home() {
         rainFadeRef.current.kill();
         rainFadeRef.current = null;
       }
-      if (!rainAudioRef.current) {
-        const audio = new Audio("/sounds/rain.mp3");
-        audio.loop = true;
-        audio.volume = rainVolume;
-        rainAudioRef.current = audio;
-      }
-      const audio = rainAudioRef.current;
-      audio.volume = rainVolume;
-      audio.play().catch(() => {/* autoplay blocked — user will interact */});
-    } else if (rainAudioRef.current) {
-      // Fade out over 1s then pause
-      const audio = rainAudioRef.current;
-      const obj = { vol: audio.volume };
+
+      const start = async () => {
+        // Create AudioContext + GainNode once
+        if (!rainCtxRef.current) {
+          const ctx = new AudioContext();
+          const gain = ctx.createGain();
+          gain.connect(ctx.destination);
+          rainCtxRef.current = ctx;
+          rainGainRef.current = gain;
+        }
+
+        const ctx = rainCtxRef.current;
+        if (ctx.state === "suspended") await ctx.resume();
+
+        // Decode buffer once
+        if (!rainBufferRef.current) {
+          const res = await fetch("/sounds/rain.mp3");
+          const arrayBuf = await res.arrayBuffer();
+          rainBufferRef.current = await ctx.decodeAudioData(arrayBuf);
+        }
+
+        // Stop previous source if any
+        if (rainSourceRef.current) {
+          rainSourceRef.current.stop();
+          rainSourceRef.current.disconnect();
+        }
+
+        // Create a new looping source
+        const source = ctx.createBufferSource();
+        source.buffer = rainBufferRef.current;
+        source.loop = true;
+        source.connect(rainGainRef.current!);
+        rainGainRef.current!.gain.value = rainVolume;
+        source.start();
+        rainSourceRef.current = source;
+      };
+
+      start().catch(() => {/* autoplay blocked — user will interact */});
+    } else if (rainSourceRef.current && rainGainRef.current) {
+      // Fade out over 1s then stop
+      const gain = rainGainRef.current;
+      const source = rainSourceRef.current;
+      const obj = { vol: gain.gain.value };
       rainFadeRef.current = gsap.to(obj, {
         vol: 0,
         duration: 1,
         ease: "power2.out",
-        onUpdate: () => { audio.volume = obj.vol; },
+        onUpdate: () => { gain.gain.value = obj.vol; },
         onComplete: () => {
-          audio.pause();
-          audio.currentTime = 0;
+          source.stop();
+          source.disconnect();
+          rainSourceRef.current = null;
           rainFadeRef.current = null;
         },
       });
     }
   }, [rainActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync volume slider to audio in real-time
+  // Sync volume slider to GainNode in real-time
   useEffect(() => {
-    if (rainAudioRef.current && rainActive) {
-      rainAudioRef.current.volume = rainVolume;
+    if (rainGainRef.current && rainActive) {
+      rainGainRef.current.gain.value = rainVolume;
     }
   }, [rainVolume, rainActive]);
 
@@ -310,11 +352,14 @@ export default function Home() {
         // Ensure user has at least one space (migrates existing data on first run)
         await ensureDefaultSpace(user!.id);
 
-        const [spacesList, tasks, tags] = await Promise.all([
+        const [spacesList, tasks, tags, userBg] = await Promise.all([
           fetchSpaces(user!.id),
           fetchTasks(user!.id),
           fetchTags(user!.id),
+          getUserBackground(user!.id).catch(() => null),
         ]);
+
+        setActiveBackground(userBg);
 
         setSpaces(spacesList);
 
@@ -1174,15 +1219,36 @@ export default function Home() {
   return (
     <>
       <div className="h-screen bg-background relative overflow-hidden flex flex-col">
-        {/* Video background */}
-        <video
-          className="absolute inset-0 z-0 w-full h-full object-cover"
-          src="/background.webm"
-          autoPlay
-          loop
-          muted
-          playsInline
-        />
+        {/* Dynamic background */}
+        {activeBackground ? (
+          activeBackground.type === "video" ? (
+            <video
+              key={activeBackground.id}
+              className="absolute inset-0 z-0 w-full h-full object-cover"
+              src={activeBackground.fileUrl}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          ) : (
+            <img
+              key={activeBackground.id}
+              className="absolute inset-0 z-0 w-full h-full object-cover"
+              src={activeBackground.fileUrl}
+              alt={activeBackground.name}
+            />
+          )
+        ) : (
+          <video
+            className="absolute inset-0 z-0 w-full h-full object-cover"
+            src="/background.webm"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        )}
 
         {/* Dim overlay for readability */}
         <div
@@ -1745,6 +1811,20 @@ export default function Home() {
         </div>
       </GlassModal>
 
+      {/* Background gallery modal */}
+      <BackgroundGalleryModal
+        open={bgGalleryOpen}
+        onClose={() => setBgGalleryOpen(false)}
+        currentBackgroundId={activeBackground?.id ?? null}
+        onSelect={async (bg) => {
+          setActiveBackground(bg);
+          setBgGalleryOpen(false);
+          if (user) {
+            await setUserBackground(user.id, bg?.id ?? null);
+          }
+        }}
+      />
+
       {/* Rain settings modal */}
       <GlassModal open={rainModalOpen} onClose={() => setRainModalOpen(false)} width={360}>
         <div className="flex flex-col gap-6">
@@ -1894,7 +1974,7 @@ export default function Home() {
               </svg>
             ),
             label: "Background Gallery",
-            onClick: () => {},
+            onClick: () => setBgGalleryOpen(true),
           },
           {
             id: "logout",

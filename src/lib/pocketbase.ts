@@ -349,4 +349,50 @@ export async function reorderColumn(
   );
 }
 
+// ─── Backgrounds ───────────────────────────────────
+export interface PBBackground {
+  id: string;
+  name: string;
+  type: "image" | "video";
+  fileUrl: string;
+  thumbnailUrl: string;
+}
+
+export async function fetchBackgrounds(): Promise<PBBackground[]> {
+  const records = await pb.collection("backgrounds").getFullList<RecordModel>({
+    sort: "sort_order",
+  });
+  return records.map((r) => ({
+    id: r.id,
+    name: r.name,
+    type: r.type as "image" | "video",
+    fileUrl: pb.files.getURL(r, r.file),
+    thumbnailUrl: pb.files.getURL(r, r.thumbnail),
+  }));
+}
+
+export async function getUserBackground(userId: string): Promise<PBBackground | null> {
+  const record = await pb.collection("users").getOne<RecordModel>(userId, {
+    expand: "selected_background",
+  });
+  const bg = record.expand?.selected_background as RecordModel | undefined;
+  if (!bg) return null;
+  return {
+    id: bg.id,
+    name: bg.name,
+    type: bg.type as "image" | "video",
+    fileUrl: pb.files.getURL(bg, bg.file),
+    thumbnailUrl: pb.files.getURL(bg, bg.thumbnail),
+  };
+}
+
+export async function setUserBackground(
+  userId: string,
+  backgroundId: string | null
+): Promise<void> {
+  await pb.collection("users").update(userId, {
+    selected_background: backgroundId ?? "",
+  });
+}
+
 export default pb;
