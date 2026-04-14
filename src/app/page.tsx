@@ -11,7 +11,6 @@ import {
   GlassDropdown,
   TactileSwitch,
   GlassSlider,
-  FluidInput,
   LayeredFAB,
 } from "@/components/glass";
 import gsap from "gsap";
@@ -127,6 +126,99 @@ function TaskCardContent({
         </div>
       )}
     </>
+  );
+}
+
+// ─── Search toggle (icon → expanded input) ─────────
+function SearchToggle({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const expand = useCallback(() => {
+    setOpen(true);
+    requestAnimationFrame(() => {
+      if (!wrapRef.current || !inputRef.current) return;
+      gsap.fromTo(
+        wrapRef.current,
+        { width: 40 },
+        { width: 220, duration: 0.4, ease: "elastic.out(1, 0.6)" }
+      );
+      inputRef.current.focus();
+    });
+  }, []);
+
+  const collapse = useCallback(() => {
+    if (value) return; // keep open if there's a query
+    if (!wrapRef.current) return;
+    gsap.to(wrapRef.current, {
+      width: 40,
+      duration: 0.25,
+      ease: "power2.in",
+      onComplete: () => setOpen(false),
+    });
+  }, [value]);
+
+  return (
+    <div
+      ref={wrapRef}
+      style={{ width: open ? 220 : 40, willChange: "width" }}
+    >
+      <LiquidGlassWrap
+        cornerRadius={21}
+        padding="0"
+        blurAmount={8}
+        saturation={140}
+        displacementScale={80}
+        shadowIntensity={0.5}
+        elasticity={0}
+      >
+        <div
+          className="flex items-center gap-2"
+          style={{ padding: "0 10px", height: 40 }}
+        >
+          <button
+            onClick={open ? undefined : expand}
+            className="flex-shrink-0 flex items-center justify-center cursor-pointer"
+            style={{ width: 20, height: 20 }}
+          >
+            <svg
+              viewBox="0 0 512 512"
+              width="16"
+              height="16"
+              fill="currentColor"
+              className="opacity-60"
+            >
+              <path d="M456.69 421.39 362.6 327.3a173.81 173.81 0 0 0 34.84-104.58C397.44 126.38 319.06 48 222.72 48S48 126.38 48 222.72s78.38 174.72 174.72 174.72A173.81 173.81 0 0 0 327.3 362.6l94.09 94.09a25 25 0 0 0 35.3-35.3zM97.92 222.72a124.8 124.8 0 1 1 124.8 124.8 124.95 124.95 0 0 1-124.8-124.8z" />
+            </svg>
+          </button>
+          {open && (
+            <input
+              ref={inputRef}
+              type="search"
+              placeholder="Search tasks..."
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onBlur={collapse}
+              className="flex-1 min-w-0 bg-transparent outline-none border-0"
+              style={{
+                fontSize: 14,
+                lineHeight: 1,
+                padding: 0,
+                color: "#ffffff",
+                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              }}
+            />
+          )}
+        </div>
+      </LiquidGlassWrap>
+    </div>
   );
 }
 
@@ -1334,14 +1426,12 @@ export default function Home() {
               }}
             />
           </div>
-          <FluidInput
-            placeholder="Search tasks..."
-            value={searchQuery}
-            onChange={setSearchQuery}
-            width={240}
-          />
           <div className="flex items-center gap-3">
-            <GlassButton onClick={() => {
+            <SearchToggle
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
+            <GlassButton size="sm" onClick={() => {
               setModalTitle("");
               setModalDescription("");
               setModalTags([]);
