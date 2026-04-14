@@ -73,7 +73,7 @@ function TaskCardContent({
   return (
     <>
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h3 className="text-sm font-bold break-words overflow-hidden flex-1">
+        <h3 className="text-base font-bold break-words overflow-hidden flex-1">
           {task.title}
         </h3>
         {showSpacePill && space && (
@@ -91,7 +91,7 @@ function TaskCardContent({
       </div>
       {task.description && task.description.trim().length > 0 && (
         <div
-          className="task-md-excerpt text-xs mb-2 break-words overflow-hidden"
+          className="task-md-excerpt text-sm mb-2 break-words overflow-hidden"
           style={{
             color: "rgba(255,255,255,0.75)",
             display: "-webkit-box",

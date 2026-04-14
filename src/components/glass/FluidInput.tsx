@@ -78,24 +78,30 @@ export default function FluidInput({
     });
   }, [focused]);
 
+  const keyIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleKeyDown = useCallback(() => {
     if (!wrapperRef.current) return;
-    gsap.to(wrapperRef.current, {
-      scaleX: 1.008,
-      scaleY: 0.996,
-      duration: 0.06,
-      ease: "power2.out",
-      onComplete: () => {
-        if (!wrapperRef.current) return;
-        gsap.to(wrapperRef.current, {
-          scaleX: focused ? 1.02 : 1,
-          scaleY: focused ? 1.02 : 1,
-          duration: 0.25,
-          ease: "elastic.out(1, 0.5)",
-        });
-      },
-    });
-  }, [focused]);
+    if (keyIdleTimer.current) clearTimeout(keyIdleTimer.current);
+    keyIdleTimer.current = setTimeout(() => {
+      if (!wrapperRef.current) return;
+      gsap.to(wrapperRef.current, {
+        scaleX: 1.008,
+        scaleY: 0.996,
+        duration: 0.08,
+        ease: "power2.out",
+        onComplete: () => {
+          if (!wrapperRef.current) return;
+          gsap.to(wrapperRef.current, {
+            scaleX: 1.02,
+            scaleY: 1.02,
+            duration: 0.35,
+            ease: "elastic.out(1, 0.6)",
+          });
+        },
+      });
+    }, 150);
+  }, []);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
