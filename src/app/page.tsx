@@ -1510,7 +1510,6 @@ export default function Home() {
                   style={{
                     border: "1px solid rgba(255, 255, 255, 0.06)",
                     background: "rgba(0, 0, 0, 0.1)",
-                    willChange: "transform, box-shadow",
                   }}
                 >
                   {/* Column header */}
