@@ -391,7 +391,7 @@ export default function UIComponents() {
     </div>
 
     {/* FAB — rendered outside the overflow-hidden container */}
-    <LayeredFAB actions={fabActions} />
+    <LayeredFAB actions={fabActions} className="right-8" />
 
     {/* Form Modal */}
     <GlassModal open={formOpen} onClose={() => setFormOpen(false)}>

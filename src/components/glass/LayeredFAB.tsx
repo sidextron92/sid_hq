@@ -130,8 +130,8 @@ export default function LayeredFAB({
       );
 
       gsap.to(iconRef.current, {
-        rotation: 45,
-        duration: 0.3,
+        rotation: 90,
+        duration: 0.4,
         ease: "back.out(1.7)",
       });
     } else {
@@ -183,7 +183,7 @@ export default function LayeredFAB({
   return (
     <div
       ref={capsuleRef}
-      className={`fixed bottom-8 right-8 z-50 cursor-grab active:cursor-grabbing select-none ${className}`}
+      className={`fixed bottom-8 z-50 cursor-grab active:cursor-grabbing select-none ${className}`}
       style={{
         touchAction: "none",
         willChange: "transform",
@@ -194,29 +194,29 @@ export default function LayeredFAB({
     >
       {/* Glass capsule body — uses LiquidGlassWrap for blur, refraction, hover glow, elasticity */}
       <LiquidGlassWrap
-        cornerRadius={65}
+        cornerRadius={32}
         padding="0"
         blurAmount={5}
         displacementScale={100}
         saturation={140}
         elasticity={0.3}
-        shadowIntensity={1.2}
+        shadowIntensity={2}
         borderOpacity={1}
-        style={{ width: 160, height: 120 }}
+        style={{ width: 80, height: 60 }}
       >
         {/* + icon (rotates to x when open) */}
         <div
           ref={iconRef}
           className="flex items-center justify-center"
           style={{
-            width: 160,
-            height: 120,
+            width: 80,
+            height: 60,
             willChange: "transform",
           }}
         >
           <svg
-            width="28"
-            height="28"
+            width="24"
+            height="24"
             viewBox="0 0 24 24"
             fill="none"
             stroke="white"
@@ -225,8 +225,8 @@ export default function LayeredFAB({
             strokeLinejoin="round"
             style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" }}
           >
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </div>
       </LiquidGlassWrap>
@@ -246,10 +246,12 @@ export default function LayeredFAB({
         <LiquidGlassWrap
           cornerRadius={20}
           padding="8px"
-          blurAmount={12}
+          blurAmount={80}
           displacementScale={60}
-          saturation={140}
+          saturation={160}
           shadowIntensity={1.5}
+          elasticity={0}
+          tint="rgba(0, 0, 0, 0.8)"
         >
           <div className="flex flex-col gap-1">
             {actions.map((action) => (
