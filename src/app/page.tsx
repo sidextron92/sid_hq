@@ -545,6 +545,8 @@ export default function Home() {
       el.style.pointerEvents = "none";
       el.style.margin = "0";
       el.style.touchAction = "none";
+      el.style.borderRadius = "16px";
+      el.style.overflow = "hidden";
 
       // Lock the page so the browser can't scroll while dragging.
       // touchAction on the card alone is insufficient because the browser
@@ -739,6 +741,8 @@ export default function Home() {
         d.el.style.touchAction = "";
         d.el.style.transformStyle = "";
         d.el.style.perspective = "";
+        d.el.style.borderRadius = "";
+        d.el.style.overflow = "";
 
         if (d.placeholder.parentElement) {
           d.placeholder.parentElement.insertBefore(d.el, d.placeholder);
