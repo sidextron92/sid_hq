@@ -259,7 +259,9 @@ export default function LiquidGlassWrap({
         style={{
           backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
           WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-          ...(isTouchDevice ? {} : { filter: `url(#${filterId})` }),
+          ...(isTouchDevice
+            ? { transform: "translateZ(0)", willChange: "transform" }
+            : { filter: `url(#${filterId})` }),
         }}
       />
 
