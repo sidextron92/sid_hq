@@ -58,7 +58,13 @@ export default function LiquidGlassWrap({
   const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 }); // 0-1 relative to element
   const [isHovered, setIsHovered] = useState(false);
   const [elasticTransform, setElasticTransform] = useState({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  // Default to true so the heavy SVG displacement filter is never rendered on
+  // the initial paint. On mobile Safari, rendering it even for a single frame
+  // (before the effect flips the flag) leaves a stale filter-cache that blurs
+  // cards until a forced repaint. Desktop devices flip this to false in the
+  // effect below, which is a harmless one-frame delay before the SVG filter
+  // kicks in.
+  const [isTouchDevice, setIsTouchDevice] = useState(true);
 
   useEffect(() => {
     setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
