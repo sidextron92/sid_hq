@@ -187,6 +187,8 @@ export default function LiquidGlassWrap({
       style={{
         borderRadius: cornerRadius,
         boxShadow: shadow,
+        backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
+        WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
         ...elasticStyle,
         ...style,
       }}
@@ -195,8 +197,8 @@ export default function LiquidGlassWrap({
       onMouseLeave={handleMouseLeave}
       onClick={onClick}
     >
-      {/* SVG Filter — skip on touch devices to avoid mobile rendering glitches */}
-      {!isTouchDevice && (
+      {/* SVG Filter — skip on touch devices and when displacement is disabled */}
+      {!isTouchDevice && displacementScale > 0 && (
         <svg
           style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
           aria-hidden="true"
@@ -259,17 +261,13 @@ export default function LiquidGlassWrap({
         />
       )}
 
-      {/* Layer 2: Glass — backdrop-filter for frost, CSS filter for SVG displacement */}
-      <span
-        className="absolute inset-0 rounded-[inherit]"
-        style={{
-          backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-          WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-          ...(!isTouchDevice
-            ? { filter: `url(#${filterId})` }
-            : {}),
-        }}
-      />
+      {/* Layer 2: SVG displacement filter (desktop only, when displacement is active) */}
+      {!isTouchDevice && displacementScale > 0 && (
+        <span
+          className="absolute inset-0 rounded-[inherit]"
+          style={{ filter: `url(#${filterId})` }}
+        />
+      )}
 
       {/* Layer 3: Hover highlight — radial glow that follows cursor */}
       <span
@@ -296,7 +294,7 @@ export default function LiquidGlassWrap({
         </>
       )}
 
-      {/* Layer 4: Border shine (screen) */}
+      {/* Layer 5: Border shine (screen) */}
       <span
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
@@ -311,7 +309,7 @@ export default function LiquidGlassWrap({
         }}
       />
 
-      {/* Layer 5: Border shine (overlay) */}
+      {/* Layer 6: Border shine (overlay) */}
       <span
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
@@ -326,7 +324,7 @@ export default function LiquidGlassWrap({
         }}
       />
 
-      {/* Layer 6: Content */}
+      {/* Content */}
       <div
         className="relative z-10"
         style={{
