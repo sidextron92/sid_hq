@@ -25,6 +25,8 @@ export interface PBTag {
   name: string;
   color: string;
   space: string; // space id
+  created: string;
+  updated: string;
 }
 
 export interface PBTask {
@@ -36,6 +38,8 @@ export interface PBTask {
   space: string; // space id
   sort_order: number;
   is_deleted: boolean;
+  created: string;
+  updated: string;
 }
 
 // Status ↔ Column mapping
@@ -231,12 +235,15 @@ export async function fetchTags(ownerId: string, spaceId?: string): Promise<PBTa
   const records = await pb.collection("tags").getFullList<RecordModel>({
     sort: "name",
     filter,
+    fields: "id,name,color,space,created,updated,owner",
   });
   return records.map((r) => ({
     id: r.id,
     name: r.name,
     color: r.color,
     space: r.space || "",
+    created: r.created,
+    updated: r.updated,
   }));
 }
 
@@ -255,6 +262,8 @@ export async function findOrCreateTag(
       name: existing.name,
       color: existing.color,
       space: existing.space || "",
+      created: existing.created,
+      updated: existing.updated,
     };
   } catch {
     // Not found — create it with a deterministic color
@@ -274,6 +283,8 @@ export async function findOrCreateTag(
       name: created.name,
       color: created.color,
       space: created.space || "",
+      created: created.created,
+      updated: created.updated,
     };
   }
 }
@@ -286,6 +297,7 @@ export async function fetchTasks(ownerId: string, spaceId?: string): Promise<PBT
   const records = await pb.collection("tasks").getFullList<RecordModel>({
     sort: "sort_order",
     filter,
+    fields: "id,title,description,status,tags,space,sort_order,is_deleted,created,updated,owner",
   });
   return records.map((r) => ({
     id: r.id,
@@ -296,6 +308,8 @@ export async function fetchTasks(ownerId: string, spaceId?: string): Promise<PBT
     space: r.space || "",
     sort_order: r.sort_order ?? 0,
     is_deleted: r.is_deleted ?? false,
+    created: r.created,
+    updated: r.updated,
   }));
 }
 
@@ -322,6 +336,8 @@ export async function createTask(data: {
     space: record.space || "",
     sort_order: record.sort_order ?? 0,
     is_deleted: false,
+    created: record.created,
+    updated: record.updated,
   };
 }
 
