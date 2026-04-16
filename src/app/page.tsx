@@ -1589,7 +1589,7 @@ export default function Home() {
           <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
             Control Centre
           </h1>
-          <div className="relative flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="relative flex items-center justify-between sm:justify-start sm:gap-4 min-w-0">
             {/* Space switcher */}
             <GlassDropdown
               size="sm"
@@ -1661,6 +1661,7 @@ export default function Home() {
                 }
               }}
             />
+            <div className="flex items-center gap-3">
             <SearchToggle
               value={searchQuery}
               onChange={setSearchQuery}
@@ -1683,6 +1684,7 @@ export default function Home() {
                 <span className="hidden sm:inline">Add Task</span>
               </span>
             </GlassButton>
+            </div>
           </div>
           </div>
         </header>
