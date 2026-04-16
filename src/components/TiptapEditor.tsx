@@ -7,7 +7,6 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { Image } from "@tiptap/extension-image";
-import { Link } from "@tiptap/extension-link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // ─── Toolbar ───────────────────────────────────────
@@ -374,16 +373,13 @@ export default function TiptapEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
+        link: { openOnClick: false, autolink: false },
       }),
       Table.configure({ resizable: false }),
       TableRow,
       TableCell,
       TableHeader,
       Image.configure({ inline: false }),
-      Link.configure({
-        openOnClick: false,
-        autolink: true,
-      }),
     ],
     content,
     onUpdate: ({ editor: e }) => {
