@@ -78,31 +78,6 @@ export default function FluidInput({
     });
   }, [focused]);
 
-  const keyIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleKeyDown = useCallback(() => {
-    if (!wrapperRef.current) return;
-    if (keyIdleTimer.current) clearTimeout(keyIdleTimer.current);
-    keyIdleTimer.current = setTimeout(() => {
-      if (!wrapperRef.current) return;
-      gsap.to(wrapperRef.current, {
-        scaleX: 1.008,
-        scaleY: 0.996,
-        duration: 0.08,
-        ease: "power2.out",
-        onComplete: () => {
-          if (!wrapperRef.current) return;
-          gsap.to(wrapperRef.current, {
-            scaleX: 1.02,
-            scaleY: 1.02,
-            duration: 0.35,
-            ease: "elastic.out(1, 0.6)",
-          });
-        },
-      });
-    }, 150);
-  }, []);
-
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       onChange?.(e.target.value);
@@ -145,7 +120,6 @@ export default function FluidInput({
             onChange={handleChange}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
             className="flex-1 min-w-0 bg-transparent outline-none border-0 select-text"
             style={{
               fontSize: 16,

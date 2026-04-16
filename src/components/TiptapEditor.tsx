@@ -438,9 +438,9 @@ export default function TiptapEditor({
       <div
         className="tiptap-editor rounded-2xl overflow-hidden"
         style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.15)",
-          boxShadow: "inset 0 2px 6px rgba(0,0,0,0.25)",
+          background: "rgba(0,0,0,0.35)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          boxShadow: "inset 0 2px 8px rgba(0,0,0,0.4)",
         }}
       >
         <Toolbar editor={editor} inTable={inTable} />

@@ -1687,7 +1687,7 @@ export default function Home() {
 
         <div className="flex flex-col gap-5">
           {/* Space + Tags row */}
-          <div className="flex flex-wrap items-start gap-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-5">
             {/* Space selector */}
             <div>
               <label
@@ -1701,7 +1701,7 @@ export default function Home() {
               </label>
               <GlassDropdown
                 size="sm"
-                width={360}
+                width={180}
                 value={modalSpaceId}
                 placeholder="Select a space..."
                 options={spaces.map((s) => ({
@@ -2099,6 +2099,18 @@ export default function Home() {
             ),
             label: "Background Gallery",
             onClick: () => setBgGalleryOpen(true),
+          },
+          {
+            id: "resync",
+            icon: (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            ),
+            label: "Re-Sync",
+            onClick: () => window.location.reload(),
           },
           {
             id: "logout",

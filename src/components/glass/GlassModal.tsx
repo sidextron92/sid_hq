@@ -161,7 +161,7 @@ export default function GlassModal({
             </svg>
           </button>
 
-          <div className="p-8 overflow-y-auto" style={{ maxHeight: "calc(100vh - 96px)" }}>
+          <div className="p-8 overflow-y-auto" style={{ maxHeight: "calc(100vh - 96px)", overflowX: "hidden" }}>
             {children}
           </div>
         </LiquidGlassWrap>
