@@ -1430,13 +1430,14 @@ export default function Home() {
             });
           }
         } else if (recurringEnabled) {
-          // No existing job, user enabled recurring → create
-          await createRecurringJob({
+          // No existing job, user enabled recurring → create and link
+          const newJob = await createRecurringJob({
             owner: user!.id,
             template_task_id: task.id,
             period: recurringPeriod,
             days: recurringPeriod === "daily" ? null : recurringDays,
           });
+          await updateTask(task.id, { recurring_job_id: newJob.id });
         }
 
         const updatedTask: Task = {
@@ -1477,6 +1478,7 @@ export default function Home() {
             days: recurringPeriod === "daily" ? null : recurringDays,
           });
           recurringJobId = job.id;
+          await updateTask(pbTask.id, { recurring_job_id: recurringJobId });
         }
 
         const task: Task = {

@@ -367,6 +367,7 @@ export async function updateTask(
     tags: string[];
     space: string;
     sort_order: number;
+    recurring_job_id: string;
   }>
 ): Promise<void> {
   await pb.collection("tasks").update(id, data);
