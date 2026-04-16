@@ -437,65 +437,68 @@ export default function Home() {
   }, [authLoading, user, router]);
 
   // ─── Load data from PocketBase ──────────────────
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
-    async function load() {
-      try {
-        // Ensure user has at least one space (migrates existing data on first run)
-        await ensureDefaultSpace(user!.id);
+    setLoading(true);
+    try {
+      // Ensure user has at least one space (migrates existing data on first run)
+      await ensureDefaultSpace(user.id);
 
-        const [spacesList, tasks, tags, userBg] = await Promise.all([
-          fetchSpaces(user!.id),
-          fetchTasks(user!.id),
-          fetchTags(user!.id),
-          getUserBackground(user!.id).catch(() => null),
-        ]);
+      const [spacesList, tasks, tags, userBg] = await Promise.all([
+        fetchSpaces(user.id),
+        fetchTasks(user.id),
+        fetchTags(user.id),
+        getUserBackground(user.id).catch(() => null),
+      ]);
 
-        setActiveBackground(userBg);
+      setActiveBackground(userBg);
 
-        setSpaces(spacesList);
+      setSpaces(spacesList);
 
-        // Restore active space from localStorage (or default to ALL)
-        const stored =
-          typeof window !== "undefined"
-            ? localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)
-            : null;
-        if (
-          stored &&
-          (stored === ALL_SPACES || spacesList.some((s) => s.id === stored))
-        ) {
-          setActiveSpaceId(stored);
-        } else {
-          setActiveSpaceId(ALL_SPACES);
-        }
-
-        // Build tag map
-        const map: Record<string, PBTag> = {};
-        for (const tag of tags) map[tag.id] = tag;
-        setTagMap(map);
-
-        // Build board from tasks
-        const b: Board = { Backlog: [], "To Do": [], "In Progress": [], Done: [] };
-        for (const task of tasks) {
-          const col = statusToColumn(task.status);
-          if (b[col]) {
-            b[col].push({
-              id: task.id,
-              title: task.title,
-              description: task.description,
-              space: task.space,
-              tags: task.tags,
-            });
-          }
-        }
-        setBoard(b);
-      } catch (err) {
-        console.error("Failed to load from PocketBase:", err);
-      } finally {
-        setLoading(false);
+      // Restore active space from localStorage (or default to ALL)
+      const stored =
+        typeof window !== "undefined"
+          ? localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY)
+          : null;
+      if (
+        stored &&
+        (stored === ALL_SPACES || spacesList.some((s) => s.id === stored))
+      ) {
+        setActiveSpaceId(stored);
+      } else {
+        setActiveSpaceId(ALL_SPACES);
       }
+
+      // Build tag map
+      const map: Record<string, PBTag> = {};
+      for (const tag of tags) map[tag.id] = tag;
+      setTagMap(map);
+
+      // Build board from tasks
+      const b: Board = { Backlog: [], "To Do": [], "In Progress": [], Done: [] };
+      for (const task of tasks) {
+        const col = statusToColumn(task.status);
+        if (b[col]) {
+          b[col].push({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            space: task.space,
+            tags: task.tags,
+          });
+        }
+      }
+      setBoard(b);
+    } catch (err) {
+      console.error("Failed to load from PocketBase:", err);
+    } finally {
+      setLoading(false);
     }
-    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -2110,7 +2113,7 @@ export default function Home() {
               </svg>
             ),
             label: "Re-Sync",
-            onClick: () => window.location.reload(),
+            onClick: loadData,
           },
           {
             id: "logout",
