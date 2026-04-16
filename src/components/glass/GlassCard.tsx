@@ -59,8 +59,6 @@ interface GlassCardProps {
   elasticity?: number;
   /** Refraction intensity via SVG displacement. Default 100. */
   displacementScale?: number;
-  /** Chromatic aberration intensity. Default 2. */
-  aberrationIntensity?: number;
   /** Dark tint for bright backgrounds. Halves text-shadow. */
   overLight?: boolean;
   /** Drop shadow depth (0–2). Default 1. */
@@ -88,7 +86,6 @@ export default function GlassCard({
   saturation,
   elasticity,
   displacementScale,
-  aberrationIntensity,
   overLight,
   shadowIntensity,
   borderOpacity,
@@ -361,7 +358,6 @@ export default function GlassCard({
           saturation={saturation}
           elasticity={elasticity}
           displacementScale={displacementScale}
-          aberrationIntensity={aberrationIntensity}
           overLight={overLight}
           shadowIntensity={shadowIntensity}
           borderOpacity={borderOpacity}

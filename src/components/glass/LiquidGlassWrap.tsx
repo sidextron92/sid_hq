@@ -12,8 +12,6 @@ interface LiquidGlassWrapProps {
   style?: React.CSSProperties;
   /** @deprecated SVG displacement filter has been removed. Prop accepted but ignored. */
   displacementScale?: number;
-  /** @deprecated Chromatic aberration has been removed. Prop accepted but ignored. */
-  aberrationIntensity?: number;
   /** Frosting / blur amount in px (0 = clear glass, 40 = fully frosted) */
   blurAmount?: number;
   /** Backdrop color saturation % (100 = normal, 200 = vivid) */
