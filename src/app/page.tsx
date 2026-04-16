@@ -1618,11 +1618,13 @@ export default function Home() {
         {/* Header */}
         <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-          <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
-            Control Centre
-          </h1>
-          <div className="relative flex items-center justify-between sm:justify-start sm:gap-4 min-w-0">
-            {/* Space switcher */}
+          {/* Left: title + space dropdown (desktop inline, mobile title-only) */}
+          <div className="flex items-center gap-4 min-w-0">
+            <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
+              Control Centre
+            </h1>
+            {/* Space switcher — hidden on mobile (shown in controls row instead) */}
+            <div className="hidden sm:block">
             <GlassDropdown
               size="sm"
               width={200}
@@ -1693,6 +1695,56 @@ export default function Home() {
                 }
               }}
             />
+            </div>{/* end hidden sm:block */}
+          </div>{/* end left group */}
+          {/* Right: controls */}
+          <div className="relative flex items-center justify-between sm:justify-start sm:gap-4 min-w-0">
+            {/* Space switcher — mobile only (desktop lives in the left group) */}
+            <div className="sm:hidden">
+            <GlassDropdown
+              size="sm"
+              width={160}
+              value={activeSpaceId}
+              options={[
+                {
+                  id: ALL_SPACES,
+                  label: "All Spaces",
+                  icon: (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" />
+                      <rect x="14" y="3" width="7" height="7" />
+                      <rect x="3" y="14" width="7" height="7" />
+                      <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                  ),
+                },
+                ...spaces.map((s) => ({
+                  id: s.id,
+                  label: s.name + (s.is_default ? " ★" : ""),
+                  icon: (
+                    <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: s.color, boxShadow: `0 0 6px ${s.color}` }} />
+                  ),
+                })),
+                {
+                  id: "__manage__",
+                  label: "Manage Spaces...",
+                  icon: (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                  ),
+                },
+              ]}
+              onChange={(opt) => {
+                if (opt.id === "__manage__") {
+                  setSpacesModalOpen(true);
+                } else {
+                  setActiveSpaceId(opt.id);
+                }
+              }}
+            />
+            </div>{/* end sm:hidden */}
             <div className="flex items-center gap-3">
             <SearchToggle
               value={searchQuery}
