@@ -167,14 +167,20 @@ function SearchToggle({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Always-mounted off-screen input for mobile — lets us focus synchronously
+  // inside the tap gesture before setOpen triggers a re-render
+  const hiddenMobileInputRef = useRef<HTMLInputElement>(null);
 
   const isMobile = () => typeof window !== "undefined" && window.innerWidth < 640;
 
   const expand = useCallback(() => {
+    // Focus the always-mounted hidden input synchronously inside the gesture
+    // so the mobile keyboard opens before React re-renders
+    if (isMobile() && hiddenMobileInputRef.current) hiddenMobileInputRef.current.focus();
     setOpen(true);
     requestAnimationFrame(() => {
-      if (inputRef.current) inputRef.current.focus();
       if (!isMobile() && wrapRef.current) {
+        if (inputRef.current) inputRef.current.focus();
         gsap.fromTo(
           wrapRef.current,
           { width: 40 },
@@ -183,6 +189,13 @@ function SearchToggle({
       }
     });
   }, []);
+
+  // After mobile overlay mounts, move focus to the visible input so typing works
+  useEffect(() => {
+    if (open && isMobile() && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [open]);
 
   // Desktop blur collapse — mobile uses X button only
   const collapse = useCallback(() => {
@@ -217,9 +230,24 @@ function SearchToggle({
     </svg>
   );
 
+  // Always-mounted hidden input so hiddenMobileInputRef is populated on tap (mobile only)
+  const hiddenMobileInput = (
+    <input
+      ref={hiddenMobileInputRef}
+      type="search"
+      aria-hidden="true"
+      tabIndex={-1}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ position: "fixed", left: "-9999px", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+    />
+  );
+
   // Mobile expanded: absolute overlay covering the full controls row
   if (open && isMobile()) {
     return (
+      <>
+      {hiddenMobileInput}
       <div className="absolute inset-0 z-10">
         <LiquidGlassWrap
           cornerRadius={21}
@@ -262,11 +290,14 @@ function SearchToggle({
           </div>
         </LiquidGlassWrap>
       </div>
+      </>
     );
   }
 
   // Desktop (or mobile collapsed): icon → expanding pill
   return (
+    <>
+    {hiddenMobileInput}
     <div
       ref={wrapRef}
       style={{ width: open ? 220 : 40, willChange: "width" }}
@@ -324,6 +355,7 @@ function SearchToggle({
         </div>
       </LiquidGlassWrap>
     </div>
+    </>
   );
 }
 
