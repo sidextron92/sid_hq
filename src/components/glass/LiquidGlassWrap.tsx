@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback, useId } from "react";
-import { DISPLACEMENT_MAP } from "./displacement-map";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 
 interface LiquidGlassWrapProps {
   children: React.ReactNode;
@@ -11,14 +10,14 @@ interface LiquidGlassWrapProps {
   padding?: string;
   className?: string;
   style?: React.CSSProperties;
-  /** Refraction intensity — how much the background bends at glass edges (0–200) */
+  /** @deprecated SVG displacement filter has been removed. Prop accepted but ignored. */
   displacementScale?: number;
+  /** @deprecated Chromatic aberration has been removed. Prop accepted but ignored. */
+  aberrationIntensity?: number;
   /** Frosting / blur amount in px (0 = clear glass, 40 = fully frosted) */
   blurAmount?: number;
   /** Backdrop color saturation % (100 = normal, 200 = vivid) */
   saturation?: number;
-  /** Chromatic aberration — RGB separation at edges (0 = none, 10 = heavy rainbow) */
-  aberrationIntensity?: number;
   /** Elasticity — how much the glass follows the cursor (0 = static, 1 = max follow) */
   elasticity?: number;
   /** Dark tint mode for use on bright backgrounds */
@@ -39,10 +38,8 @@ export default function LiquidGlassWrap({
   padding = "24px 28px",
   className = "",
   style,
-  displacementScale = 100,
   blurAmount = 5,
   saturation = 140,
-  aberrationIntensity = 2,
   elasticity = 0.3,
   overLight = false,
   shadowIntensity = 1,
@@ -50,42 +47,11 @@ export default function LiquidGlassWrap({
   tint,
   onClick,
 }: LiquidGlassWrapProps) {
-  const id = useId().replace(/:/g, "");
-  const filterId = `glass-${id}`;
   const glassRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 300, h: 200 });
   const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
-  const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 }); // 0-1 relative to element
+  const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 });
   const [isHovered, setIsHovered] = useState(false);
   const [elasticTransform, setElasticTransform] = useState({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
-  // Default to true so the heavy SVG displacement filter is never rendered on
-  // the initial paint. On mobile Safari, rendering it even for a single frame
-  // (before the effect flips the flag) leaves a stale filter-cache that blurs
-  // cards until a forced repaint. Desktop devices flip this to false in the
-  // effect below, which is a harmless one-frame delay before the SVG filter
-  // kicks in.
-  const [isTouchDevice, setIsTouchDevice] = useState(true);
-
-  useEffect(() => {
-    setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
-  }, []);
-
-  // Measure the glass element
-  useEffect(() => {
-    if (!glassRef.current) return;
-    const measure = () => {
-      if (!glassRef.current) return;
-      const { width, height } = glassRef.current.getBoundingClientRect();
-      setSize((prev) => {
-        if (prev.w === Math.round(width) && prev.h === Math.round(height)) return prev;
-        return { w: Math.round(width), h: Math.round(height) };
-      });
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(glassRef.current);
-    return () => ro.disconnect();
-  }, []);
 
   // Track mouse for border shine + elasticity
   const handleMouseMove = useCallback(
@@ -98,13 +64,11 @@ export default function LiquidGlassWrap({
       const offY = ((e.clientY - cy) / rect.height) * 100;
       setMouseOffset({ x: offX, y: offY });
 
-      // Track cursor position relative to element (0-1) for hover glow
       setMousePos({
         x: (e.clientX - rect.left) / rect.width,
         y: (e.clientY - rect.top) / rect.height,
       });
 
-      // Elasticity: translate + directional stretch toward cursor
       if (elasticity > 0) {
         const deltaX = e.clientX - cx;
         const deltaY = e.clientY - cy;
@@ -149,11 +113,6 @@ export default function LiquidGlassWrap({
     }
   }, [elasticity]);
 
-  const scale = displacementScale;
-  const aberr = aberrationIntensity;
-  const greenScale = scale + aberr * 5;
-  const blueScale = scale + aberr * 10;
-
   // Border shine gradient — rotates with mouse
   const gradAngle = 135 + mouseOffset.x * 1.2;
   const gradStop1 = Math.max(10, 33 + mouseOffset.y * 0.3);
@@ -197,62 +156,6 @@ export default function LiquidGlassWrap({
       onMouseLeave={handleMouseLeave}
       onClick={onClick}
     >
-      {/* SVG Filter — skip on touch devices and when displacement is disabled */}
-      {!isTouchDevice && displacementScale > 0 && (
-        <svg
-          style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
-          aria-hidden="true"
-        >
-          <defs>
-            <filter
-              id={filterId}
-              x="-35%"
-              y="-35%"
-              width="170%"
-              height="170%"
-              colorInterpolationFilters="sRGB"
-            >
-              <feImage
-                x="0" y="0" width="100%" height="100%"
-                result="DISPLACEMENT_MAP"
-                href={DISPLACEMENT_MAP}
-                preserveAspectRatio="xMidYMid slice"
-              />
-              <feColorMatrix
-                in="DISPLACEMENT_MAP" type="matrix"
-                values="0.3 0.3 0.3 0 0  0.3 0.3 0.3 0 0  0.3 0.3 0.3 0 0  0 0 0 1 0"
-                result="EDGE_INTENSITY"
-              />
-              <feComponentTransfer in="EDGE_INTENSITY" result="EDGE_MASK">
-                <feFuncA type="discrete" tableValues={`0 ${aberr * 0.05} 1`} />
-              </feComponentTransfer>
-              <feOffset in="SourceGraphic" dx="0" dy="0" result="CENTER_ORIGINAL" />
-
-              {/* Chromatic aberration: R, G, B at different displacement scales */}
-              <feDisplacementMap in="SourceGraphic" in2="DISPLACEMENT_MAP" scale={-scale} xChannelSelector="R" yChannelSelector="B" result="RED_DISPLACED" />
-              <feColorMatrix in="RED_DISPLACED" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="RED_CHANNEL" />
-
-              <feDisplacementMap in="SourceGraphic" in2="DISPLACEMENT_MAP" scale={-greenScale} xChannelSelector="R" yChannelSelector="B" result="GREEN_DISPLACED" />
-              <feColorMatrix in="GREEN_DISPLACED" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="GREEN_CHANNEL" />
-
-              <feDisplacementMap in="SourceGraphic" in2="DISPLACEMENT_MAP" scale={-blueScale} xChannelSelector="R" yChannelSelector="B" result="BLUE_DISPLACED" />
-              <feColorMatrix in="BLUE_DISPLACED" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="BLUE_CHANNEL" />
-
-              <feBlend in="GREEN_CHANNEL" in2="BLUE_CHANNEL" mode="screen" result="GB_COMBINED" />
-              <feBlend in="RED_CHANNEL" in2="GB_COMBINED" mode="screen" result="RGB_COMBINED" />
-              <feGaussianBlur in="RGB_COMBINED" stdDeviation={Math.max(0.1, 0.5 - aberr * 0.1)} result="ABERRATED_BLURRED" />
-
-              <feComposite in="ABERRATED_BLURRED" in2="EDGE_MASK" operator="in" result="EDGE_ABERRATION" />
-              <feComponentTransfer in="EDGE_MASK" result="INVERTED_MASK">
-                <feFuncA type="table" tableValues="1 0" />
-              </feComponentTransfer>
-              <feComposite in="CENTER_ORIGINAL" in2="INVERTED_MASK" operator="in" result="CENTER_CLEAN" />
-              <feComposite in="EDGE_ABERRATION" in2="CENTER_CLEAN" operator="over" />
-            </filter>
-          </defs>
-        </svg>
-      )}
-
       {/* Layer 1: Dark tint for overLight mode */}
       {overLight && (
         <span
@@ -261,15 +164,7 @@ export default function LiquidGlassWrap({
         />
       )}
 
-      {/* Layer 2: SVG displacement filter (desktop only, when displacement is active) */}
-      {!isTouchDevice && displacementScale > 0 && (
-        <span
-          className="absolute inset-0 rounded-[inherit]"
-          style={{ filter: `url(#${filterId})` }}
-        />
-      )}
-
-      {/* Layer 3: Hover highlight — radial glow that follows cursor */}
+      {/* Layer 2: Hover highlight — radial glow that follows cursor */}
       <span
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
@@ -280,7 +175,7 @@ export default function LiquidGlassWrap({
         }}
       />
 
-      {/* Layer 4: Color tint overlay (two passes for visibility on any background) */}
+      {/* Layer 3: Color tint overlay (two passes for visibility on any background) */}
       {tint && (
         <>
           <span
@@ -294,7 +189,7 @@ export default function LiquidGlassWrap({
         </>
       )}
 
-      {/* Layer 5: Border shine (screen) */}
+      {/* Layer 4: Border shine (screen) */}
       <span
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
@@ -309,7 +204,7 @@ export default function LiquidGlassWrap({
         }}
       />
 
-      {/* Layer 6: Border shine (overlay) */}
+      {/* Layer 5: Border shine (overlay) */}
       <span
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{

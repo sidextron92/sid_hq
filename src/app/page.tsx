@@ -1585,7 +1585,6 @@ export default function Home() {
                                 cornerRadius={16}
                                 padding="14px 16px"
                                 blurAmount={6}
-                                displacementScale={60}
                                 overLight
                                 elasticity={0.2}
                                 shadowIntensity={0.8}
