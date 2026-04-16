@@ -1141,6 +1141,19 @@ export default function Home() {
   const isEditing = editingTask !== null && editingTask !== "new";
   const modalOpen = editingTask !== null;
 
+  const openAddTaskModal = useCallback(() => {
+    setModalTitle("");
+    setModalDescription("");
+    setModalTags([]);
+    setModalTagInput("");
+    const preferred =
+      activeSpaceIdRef.current !== ALL_SPACES
+        ? activeSpaceIdRef.current
+        : spaces.find((s) => s.is_default)?.id ?? spaces[0]?.id ?? "";
+    setModalSpaceId(preferred);
+    setEditingTask("new");
+  }, [spaces]);
+
   const closeModal = useCallback(() => {
     setEditingTask(null);
     setModalTitle("");
@@ -1306,6 +1319,39 @@ export default function Home() {
     }
   }, [isEditing, editingTask, deleting, closeModal]);
 
+  // ─── Keyboard shortcuts ─────────────────────────
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isEditable =
+        target.isContentEditable ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT";
+
+      // "N" → open Add Task modal (only when nothing is open and not typing)
+      if ((e.key === "n" || e.key === "N") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!modalOpen && !spacesModalOpen && !bgGalleryOpen && !rainModalOpen && !isEditable) {
+          e.preventDefault();
+          openAddTaskModal();
+        }
+      }
+
+      // Enter → create/save task (only when task modal is open)
+      if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        if (modalOpen) {
+          if (target.isContentEditable) return; // typing in TiptapEditor
+          if (tagEditOpen) return;               // typing a new tag
+          e.preventDefault();
+          handleSaveTask();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [modalOpen, spacesModalOpen, bgGalleryOpen, rainModalOpen, tagEditOpen, openAddTaskModal, handleSaveTask]);
+
   // ─── Render ─────────────────────────────────────
   if (authLoading || !user) return null;
 
@@ -1432,19 +1478,7 @@ export default function Home() {
               value={searchQuery}
               onChange={setSearchQuery}
             />
-            <GlassButton size="sm" onClick={() => {
-              setModalTitle("");
-              setModalDescription("");
-              setModalTags([]);
-              setModalTagInput("");
-              // Pre-fill space: current active, or the default space
-              const preferred =
-                activeSpaceId !== ALL_SPACES
-                  ? activeSpaceId
-                  : spaces.find((s) => s.is_default)?.id ?? spaces[0]?.id ?? "";
-              setModalSpaceId(preferred);
-              setEditingTask("new");
-            }}>
+            <GlassButton size="sm" onClick={openAddTaskModal}>
               <span className="flex items-center gap-2">
                 <svg
                   width="16"
@@ -1821,6 +1855,7 @@ export default function Home() {
             placeholder="Task title..."
             value={modalTitle}
             onChange={setModalTitle}
+            autoFocus
           />
 
           {/* Description */}

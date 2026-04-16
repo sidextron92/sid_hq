@@ -12,6 +12,7 @@ interface GlassFormFieldProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   type?: string;
   className?: string;
+  autoFocus?: boolean;
 }
 
 export default function GlassFormField({
@@ -22,6 +23,7 @@ export default function GlassFormField({
   onKeyDown,
   type = "text",
   className = "",
+  autoFocus = false,
 }: GlassFormFieldProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +137,7 @@ export default function GlassFormField({
               handleKeyDown();
               onKeyDown?.(e);
             }}
+            autoFocus={autoFocus}
             className="w-full bg-transparent outline-none border-0 select-text"
             style={{
               fontSize: 15,
