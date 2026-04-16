@@ -38,6 +38,20 @@ export interface PBTask {
   space: string; // space id
   sort_order: number;
   is_deleted: boolean;
+  recurring_job_id: string; // recurring_jobs relation (empty if none)
+  created: string;
+  updated: string;
+}
+
+export interface PBRecurringJob {
+  id: string;
+  owner: string;
+  template_task_id: string;
+  period: "daily" | "weekly" | "monthly";
+  days: number[] | null; // monthly: [1,15], weekly: [0-6], daily: null
+  is_active: boolean;
+  last_executed_at: string; // ISO date or ""
+  is_deleted: boolean;
   created: string;
   updated: string;
 }
@@ -297,7 +311,7 @@ export async function fetchTasks(ownerId: string, spaceId?: string): Promise<PBT
   const records = await pb.collection("tasks").getFullList<RecordModel>({
     sort: "sort_order",
     filter,
-    fields: "id,title,description,status,tags,space,sort_order,is_deleted,created,updated,owner",
+    fields: "id,title,description,status,tags,space,sort_order,is_deleted,recurring_job_id,created,updated,owner",
   });
   return records.map((r) => ({
     id: r.id,
@@ -308,6 +322,7 @@ export async function fetchTasks(ownerId: string, spaceId?: string): Promise<PBT
     space: r.space || "",
     sort_order: r.sort_order ?? 0,
     is_deleted: r.is_deleted ?? false,
+    recurring_job_id: r.recurring_job_id || "",
     created: r.created,
     updated: r.updated,
   }));
@@ -321,6 +336,7 @@ export async function createTask(data: {
   space: string;
   sort_order: number;
   owner: string;
+  recurring_job_id?: string;
 }): Promise<PBTask> {
   const record = await pb.collection("tasks").create<RecordModel>({
     ...data,
@@ -336,6 +352,7 @@ export async function createTask(data: {
     space: record.space || "",
     sort_order: record.sort_order ?? 0,
     is_deleted: false,
+    recurring_job_id: record.recurring_job_id || "",
     created: record.created,
     updated: record.updated,
   };
@@ -416,6 +433,75 @@ export async function setUserBackground(
   await pb.collection("users").update(userId, {
     selected_background: backgroundId ?? "",
   });
+}
+
+// ─── Recurring Jobs ────────────────────────────────
+function mapRecurringJob(r: RecordModel): PBRecurringJob {
+  return {
+    id: r.id,
+    owner: r.owner,
+    template_task_id: r.template_task_id,
+    period: r.period as PBRecurringJob["period"],
+    days: r.days ?? null,
+    is_active: r.is_active ?? true,
+    last_executed_at: r.last_executed_at || "",
+    is_deleted: r.is_deleted ?? false,
+    created: r.created,
+    updated: r.updated,
+  };
+}
+
+export async function createRecurringJob(data: {
+  owner: string;
+  template_task_id: string;
+  period: "daily" | "weekly" | "monthly";
+  days: number[] | null;
+}): Promise<PBRecurringJob> {
+  const record = await pb.collection("recurring_jobs").create<RecordModel>({
+    ...data,
+    is_active: true,
+    last_executed_at: "",
+    is_deleted: false,
+  });
+  return mapRecurringJob(record);
+}
+
+export async function updateRecurringJob(
+  id: string,
+  data: Partial<{
+    period: "daily" | "weekly" | "monthly";
+    days: number[] | null;
+    is_active: boolean;
+  }>
+): Promise<void> {
+  await pb.collection("recurring_jobs").update(id, data);
+}
+
+export async function deleteRecurringJob(id: string): Promise<void> {
+  await pb.collection("recurring_jobs").update(id, { is_deleted: true, is_active: false });
+}
+
+export async function fetchRecurringJobForTask(taskId: string): Promise<PBRecurringJob | null> {
+  try {
+    const record = await pb
+      .collection("recurring_jobs")
+      .getFirstListItem<RecordModel>(
+        `template_task_id = "${taskId}" && is_deleted = false`
+      );
+    return mapRecurringJob(record);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchRecurringJobById(id: string): Promise<PBRecurringJob | null> {
+  try {
+    const record = await pb.collection("recurring_jobs").getOne<RecordModel>(id);
+    if (record.is_deleted) return null;
+    return mapRecurringJob(record);
+  } catch {
+    return null;
+  }
 }
 
 export default pb;

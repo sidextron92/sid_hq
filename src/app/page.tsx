@@ -2065,9 +2065,9 @@ export default function Home() {
 
           {/* ─── Recurring Task Section ─────────────── */}
           <div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <label
-                className="block text-xs font-bold uppercase tracking-widest"
+                className="text-xs font-bold uppercase tracking-widest"
                 style={{
                   color: "rgba(255, 255, 255, 0.7)",
                   textShadow: "0 1px 4px rgba(0,0,0,0.5)",
@@ -2076,7 +2076,7 @@ export default function Home() {
                 Recurring Task
               </label>
               <TactileSwitch
-                scale={0.4}
+                scale={0.45}
                 checked={recurringEnabled}
                 onChange={setRecurringEnabled}
               />

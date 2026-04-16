@@ -40,11 +40,21 @@ npm run lint       # ESLint
 - `useAuth()` returns `{ user, loading, login, signup, verifySignupOtp, logout }`
 
 ### PocketBase Data Model
-- **Collections**: `users`, `tasks`, `tags` — all with `owner` relation field
+- **Collections**: `users`, `tasks`, `tags`, `spaces`, `recurring_jobs` — all with `owner` relation field
 - All queries filter by `owner` (logged-in user's ID)
 - Tasks use soft delete (`is_deleted` field)
 - Status values: `backlog`, `todo`, `in_progress`, `done` — mapped to column names via `statusToColumn()`/`columnToStatus()`
 - Tags auto-created with deterministic colors via `findOrCreateTag(name, ownerId)`
+
+### Recurring Tasks
+- **Collection**: `recurring_jobs` — fields: `owner`, `template_task_id` (relation→tasks), `period` (daily/weekly/monthly), `days` (JSON array, nullable), `is_active`, `last_executed_at`, `is_deleted`
+- Tasks have optional `recurring_job_id` (relation→recurring_jobs) linking child tasks back to their recurring job
+- One record per recurring task (no duplication); `last_executed_at` prevents double-execution
+- `days` field: monthly `[1,15]`, weekly `[0-6]` (Sun=0), daily `null`
+- Cron script: `scripts/cron-recurring.mjs` — runs daily, creates task copies with date-prefixed titles
+  - Monthly: `[Apr'26] - Task title`, Weekly/Daily: `[16-Apr-2026] - Task title`
+  - Requires env: `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`
+- CRUD functions in `src/lib/pocketbase.ts`: `createRecurringJob`, `updateRecurringJob`, `deleteRecurringJob`, `fetchRecurringJobForTask`, `fetchRecurringJobById`
 
 ### Environment
 ```

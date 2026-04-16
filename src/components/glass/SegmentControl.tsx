@@ -59,7 +59,7 @@ export default function SegmentControl({
   return (
     <div
       ref={containerRef}
-      className={`relative inline-flex items-center rounded-full p-[5px] ${className}`}
+      className={`relative flex items-center rounded-full p-[5px] ${className}`}
       style={{
         background: "rgba(0, 0, 0, 0.3)",
         border: "1px solid rgba(255, 255, 255, 0.08)",
@@ -90,11 +90,10 @@ export default function SegmentControl({
           ref={(el) => {
             if (el) segmentRefs.current[index] = el;
           }}
-          className="relative z-10 px-6 py-2.5 cursor-pointer select-none text-sm font-bold"
+          className="relative z-10 px-3 sm:px-6 py-2.5 cursor-pointer select-none text-sm font-bold flex-1"
           style={{
             opacity: active === index ? 1 : 0.5,
             transition: "opacity 0.2s",
-            minWidth: 80,
             textAlign: "center",
           }}
           onClick={() => handleSelect(index)}
