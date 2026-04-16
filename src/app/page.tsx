@@ -10,6 +10,7 @@ import {
   GlassFormField,
   GlassDropdown,
   TactileSwitch,
+  SegmentControl,
   GlassSlider,
   LayeredFAB,
 } from "@/components/glass";
@@ -31,9 +32,15 @@ import {
   statusToColumn,
   getUserBackground,
   setUserBackground,
+  createRecurringJob,
+  updateRecurringJob,
+  deleteRecurringJob,
+  fetchRecurringJobForTask,
+  fetchRecurringJobById,
   type PBTag,
   type PBSpace,
   type PBBackground,
+  type PBRecurringJob,
 } from "@/lib/pocketbase";
 
 const ALL_SPACES = "__all__";
@@ -46,6 +53,7 @@ interface Task {
   description: string;
   space: string;
   tags: string[]; // tag record IDs
+  recurring_job_id?: string; // linked recurring job (empty or absent if none)
 }
 
 type Board = Record<string, Task[]>;
@@ -77,6 +85,25 @@ function TaskCardContent({
     <>
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="text-base font-bold break-words overflow-hidden flex-1">
+          {task.recurring_job_id && (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="inline-block mr-1.5 -mt-0.5 opacity-60"
+              style={{ color: "rgba(99, 202, 255, 0.9)" }}
+            >
+              <path d="M21 2v6h-6" />
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M3 22v-6h6" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            </svg>
+          )}
           {task.title}
         </h3>
         {showSpacePill && space && (
@@ -141,21 +168,26 @@ function SearchToggle({
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const isMobile = () => typeof window !== "undefined" && window.innerWidth < 640;
+
   const expand = useCallback(() => {
     setOpen(true);
     requestAnimationFrame(() => {
-      if (!wrapRef.current || !inputRef.current) return;
-      gsap.fromTo(
-        wrapRef.current,
-        { width: 40 },
-        { width: 220, duration: 0.4, ease: "elastic.out(1, 0.6)" }
-      );
-      inputRef.current.focus();
+      if (inputRef.current) inputRef.current.focus();
+      if (!isMobile() && wrapRef.current) {
+        gsap.fromTo(
+          wrapRef.current,
+          { width: 40 },
+          { width: 220, duration: 0.4, ease: "elastic.out(1, 0.6)" }
+        );
+      }
     });
   }, []);
 
+  // Desktop blur collapse — mobile uses X button only
   const collapse = useCallback(() => {
-    if (value) return; // keep open if there's a query
+    if (isMobile()) return;
+    if (value) return;
     if (!wrapRef.current) return;
     gsap.to(wrapRef.current, {
       width: 40,
@@ -165,6 +197,75 @@ function SearchToggle({
     });
   }, [value]);
 
+  const forceCollapse = useCallback(() => {
+    onChange("");
+    if (!isMobile() && wrapRef.current) {
+      gsap.to(wrapRef.current, {
+        width: 40,
+        duration: 0.25,
+        ease: "power2.in",
+        onComplete: () => setOpen(false),
+      });
+    } else {
+      setOpen(false);
+    }
+  }, [onChange]);
+
+  const searchIcon = (
+    <svg viewBox="0 0 512 512" width="16" height="16" fill="currentColor" className="opacity-60">
+      <path d="M456.69 421.39 362.6 327.3a173.81 173.81 0 0 0 34.84-104.58C397.44 126.38 319.06 48 222.72 48S48 126.38 48 222.72s78.38 174.72 174.72 174.72A173.81 173.81 0 0 0 327.3 362.6l94.09 94.09a25 25 0 0 0 35.3-35.3zM97.92 222.72a124.8 124.8 0 1 1 124.8 124.8 124.95 124.95 0 0 1-124.8-124.8z" />
+    </svg>
+  );
+
+  // Mobile expanded: absolute overlay covering the full controls row
+  if (open && isMobile()) {
+    return (
+      <div className="absolute inset-0 z-10">
+        <LiquidGlassWrap
+          cornerRadius={21}
+          padding="0"
+          blurAmount={8}
+          saturation={140}
+          displacementScale={80}
+          shadowIntensity={0.5}
+          elasticity={0}
+        >
+          <div className="flex items-center gap-2 w-full" style={{ padding: "0 10px", height: 40 }}>
+            <span className="flex-shrink-0 flex items-center justify-center" style={{ width: 20, height: 20 }}>
+              {searchIcon}
+            </span>
+            <input
+              ref={inputRef}
+              type="search"
+              placeholder="Search tasks..."
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="flex-1 min-w-0 bg-transparent outline-none border-0"
+              style={{
+                fontSize: 14,
+                lineHeight: 1,
+                padding: 0,
+                color: "#ffffff",
+                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              }}
+            />
+            <button
+              onClick={forceCollapse}
+              className="flex-shrink-0 flex items-center justify-center cursor-pointer opacity-60 hover:opacity-100"
+              style={{ width: 20, height: 20 }}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </LiquidGlassWrap>
+      </div>
+    );
+  }
+
+  // Desktop (or mobile collapsed): icon → expanding pill
   return (
     <div
       ref={wrapRef}
@@ -188,33 +289,37 @@ function SearchToggle({
             className="flex-shrink-0 flex items-center justify-center cursor-pointer"
             style={{ width: 20, height: 20 }}
           >
-            <svg
-              viewBox="0 0 512 512"
-              width="16"
-              height="16"
-              fill="currentColor"
-              className="opacity-60"
-            >
-              <path d="M456.69 421.39 362.6 327.3a173.81 173.81 0 0 0 34.84-104.58C397.44 126.38 319.06 48 222.72 48S48 126.38 48 222.72s78.38 174.72 174.72 174.72A173.81 173.81 0 0 0 327.3 362.6l94.09 94.09a25 25 0 0 0 35.3-35.3zM97.92 222.72a124.8 124.8 0 1 1 124.8 124.8 124.95 124.95 0 0 1-124.8-124.8z" />
-            </svg>
+            {searchIcon}
           </button>
           {open && (
-            <input
-              ref={inputRef}
-              type="search"
-              placeholder="Search tasks..."
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              onBlur={collapse}
-              className="flex-1 min-w-0 bg-transparent outline-none border-0"
-              style={{
-                fontSize: 14,
-                lineHeight: 1,
-                padding: 0,
-                color: "#ffffff",
-                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-              }}
-            />
+            <>
+              <input
+                ref={inputRef}
+                type="search"
+                placeholder="Search tasks..."
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                onBlur={collapse}
+                className="flex-1 min-w-0 bg-transparent outline-none border-0"
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1,
+                  padding: 0,
+                  color: "#ffffff",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                }}
+              />
+              <button
+                onMouseDown={(e) => { e.preventDefault(); forceCollapse(); }}
+                className="flex-shrink-0 flex items-center justify-center cursor-pointer opacity-60 hover:opacity-100"
+                style={{ width: 20, height: 20 }}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </>
           )}
         </div>
       </LiquidGlassWrap>
@@ -247,6 +352,12 @@ export default function Home() {
   const [tagEditOpen, setTagEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Recurring task modal state
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringPeriod, setRecurringPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [recurringDays, setRecurringDays] = useState<number[]>([]);
+  const [existingRecurringJob, setExistingRecurringJob] = useState<PBRecurringJob | null>(null);
 
   // Build lookup maps
   const spaceMap = useMemo(() => {
@@ -485,6 +596,7 @@ export default function Home() {
             description: task.description,
             space: task.space,
             tags: task.tags,
+            recurring_job_id: task.recurring_job_id || undefined,
           });
         }
       }
@@ -1015,7 +1127,7 @@ export default function Home() {
 
   // ─── Pointerdown: long-press (touch) or threshold (mouse) gate ──
   const openEditModalForTask = useCallback(
-    (task: Task, column: string) => {
+    async (task: Task, column: string) => {
       setModalTitle(task.title);
       setModalDescription(task.description || "");
       setModalSpaceId(task.space || "");
@@ -1024,6 +1136,27 @@ export default function Home() {
         .filter(Boolean) as string[];
       setModalTags(taskTagNames);
       setModalTagInput("");
+
+      // Load recurring job data
+      setRecurringEnabled(false);
+      setRecurringPeriod("daily");
+      setRecurringDays([]);
+      setExistingRecurringJob(null);
+
+      let job: PBRecurringJob | null = null;
+      if (task.recurring_job_id) {
+        job = await fetchRecurringJobById(task.recurring_job_id);
+      }
+      if (!job) {
+        job = await fetchRecurringJobForTask(task.id);
+      }
+      if (job) {
+        setExistingRecurringJob(job);
+        setRecurringEnabled(job.is_active);
+        setRecurringPeriod(job.period);
+        setRecurringDays(job.days ?? []);
+      }
+
       setEditingTask({ task, column });
     },
     []
@@ -1149,6 +1282,10 @@ export default function Home() {
     setModalDescription("");
     setModalTags([]);
     setModalTagInput("");
+    setRecurringEnabled(false);
+    setRecurringPeriod("daily");
+    setRecurringDays([]);
+    setExistingRecurringJob(null);
     const preferred =
       activeSpaceIdRef.current !== ALL_SPACES
         ? activeSpaceIdRef.current
@@ -1165,6 +1302,10 @@ export default function Home() {
     setModalTags([]);
     setModalTagInput("");
     setTagEditOpen(false);
+    setRecurringEnabled(false);
+    setRecurringPeriod("daily");
+    setRecurringDays([]);
+    setExistingRecurringJob(null);
   }, []);
 
   // When space changes in the modal, clear the tag selection (tags are space-scoped)
@@ -1240,12 +1381,39 @@ export default function Home() {
           tags: tagIds,
         });
 
+        // Handle recurring job changes
+        if (existingRecurringJob) {
+          if (!recurringEnabled) {
+            // Was on, now off → soft delete
+            await deleteRecurringJob(existingRecurringJob.id);
+          } else if (
+            existingRecurringJob.period !== recurringPeriod ||
+            JSON.stringify(existingRecurringJob.days) !== JSON.stringify(recurringDays.length > 0 ? recurringDays : null)
+          ) {
+            // Config changed → update
+            await updateRecurringJob(existingRecurringJob.id, {
+              period: recurringPeriod,
+              days: recurringPeriod === "daily" ? null : recurringDays,
+              is_active: true,
+            });
+          }
+        } else if (recurringEnabled) {
+          // No existing job, user enabled recurring → create
+          await createRecurringJob({
+            owner: user!.id,
+            template_task_id: task.id,
+            period: recurringPeriod,
+            days: recurringPeriod === "daily" ? null : recurringDays,
+          });
+        }
+
         const updatedTask: Task = {
           id: task.id,
           title: modalTitle.trim(),
           description: modalDescription,
           space: modalSpaceId,
           tags: tagIds,
+          recurring_job_id: task.recurring_job_id,
         };
 
         setBoard((prev) => ({
@@ -1267,12 +1435,25 @@ export default function Home() {
           owner: user!.id,
         });
 
+        // Create recurring job if enabled
+        let recurringJobId: string | undefined;
+        if (recurringEnabled) {
+          const job = await createRecurringJob({
+            owner: user!.id,
+            template_task_id: pbTask.id,
+            period: recurringPeriod,
+            days: recurringPeriod === "daily" ? null : recurringDays,
+          });
+          recurringJobId = job.id;
+        }
+
         const task: Task = {
           id: pbTask.id,
           title: pbTask.title,
           description: pbTask.description,
           space: pbTask.space,
           tags: pbTask.tags,
+          recurring_job_id: recurringJobId,
         };
 
         setBoard((prev) => ({
@@ -1298,6 +1479,10 @@ export default function Home() {
     board.Backlog.length,
     closeModal,
     user,
+    recurringEnabled,
+    recurringPeriod,
+    recurringDays,
+    existingRecurringJob,
   ]);
 
   // ─── Delete task (soft) ─────────────────────────
@@ -1399,11 +1584,12 @@ export default function Home() {
         />
 
         {/* Header */}
-        <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex items-center justify-between gap-4 flex-shrink-0">
-          <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">
-              Control Centre
-            </h1>
+        <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+          <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
+            Control Centre
+          </h1>
+          <div className="relative flex items-center gap-3 sm:gap-4 min-w-0">
             {/* Space switcher */}
             <GlassDropdown
               size="sm"
@@ -1475,8 +1661,6 @@ export default function Home() {
                 }
               }}
             />
-          </div>
-          <div className="flex items-center gap-3">
             <SearchToggle
               value={searchQuery}
               onChange={setSearchQuery}
@@ -1496,9 +1680,10 @@ export default function Home() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                Add Task
+                <span className="hidden sm:inline">Add Task</span>
               </span>
             </GlassButton>
+          </div>
           </div>
         </header>
 
@@ -1876,6 +2061,147 @@ export default function Home() {
               content={modalDescription}
               onChange={setModalDescription}
             />
+          </div>
+
+          {/* ─── Recurring Task Section ─────────────── */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label
+                className="block text-xs font-bold uppercase tracking-widest"
+                style={{
+                  color: "rgba(255, 255, 255, 0.7)",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                }}
+              >
+                Recurring Task
+              </label>
+              <TactileSwitch
+                scale={0.4}
+                checked={recurringEnabled}
+                onChange={setRecurringEnabled}
+              />
+            </div>
+
+            {recurringEnabled && (
+              <div className="mt-4 flex flex-col gap-4">
+                {/* Period selector */}
+                <div>
+                  <label
+                    className="block text-xs font-bold uppercase tracking-widest mb-2"
+                    style={{
+                      color: "rgba(255, 255, 255, 0.5)",
+                      textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    Frequency
+                  </label>
+                  <SegmentControl
+                    segments={["Daily", "Weekly", "Monthly"]}
+                    activeIndex={["daily", "weekly", "monthly"].indexOf(recurringPeriod)}
+                    onChange={(idx) => {
+                      const periods = ["daily", "weekly", "monthly"] as const;
+                      setRecurringPeriod(periods[idx]);
+                      setRecurringDays([]);
+                    }}
+                  />
+                </div>
+
+                {/* Weekly day picker */}
+                {recurringPeriod === "weekly" && (
+                  <div>
+                    <label
+                      className="block text-xs font-bold uppercase tracking-widest mb-2"
+                      style={{
+                        color: "rgba(255, 255, 255, 0.5)",
+                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                      }}
+                    >
+                      Days of Week
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
+                        const selected = recurringDays.includes(i);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() =>
+                              setRecurringDays((prev) =>
+                                selected ? prev.filter((d) => d !== i) : [...prev, i]
+                              )
+                            }
+                            className="text-xs font-bold px-3 py-1.5 rounded-full cursor-pointer select-none"
+                            style={{
+                              background: selected
+                                ? "rgba(99, 102, 241, 0.5)"
+                                : "rgba(255, 255, 255, 0.08)",
+                              border: selected
+                                ? "1px solid rgba(99, 102, 241, 0.7)"
+                                : "1px solid rgba(255,255,255,0.15)",
+                              color: selected
+                                ? "#fff"
+                                : "rgba(255,255,255,0.6)",
+                            }}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Monthly date picker */}
+                {recurringPeriod === "monthly" && (
+                  <div>
+                    <label
+                      className="block text-xs font-bold uppercase tracking-widest mb-2"
+                      style={{
+                        color: "rgba(255, 255, 255, 0.5)",
+                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                      }}
+                    >
+                      Days of Month
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => {
+                        const selected = recurringDays.includes(date);
+                        return (
+                          <button
+                            key={date}
+                            type="button"
+                            onClick={() =>
+                              setRecurringDays((prev) =>
+                                selected ? prev.filter((d) => d !== date) : [...prev, date]
+                              )
+                            }
+                            className="text-xs font-bold rounded-lg cursor-pointer select-none"
+                            style={{
+                              width: 34,
+                              height: 34,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: selected
+                                ? "rgba(99, 102, 241, 0.5)"
+                                : "rgba(255, 255, 255, 0.08)",
+                              border: selected
+                                ? "1px solid rgba(99, 102, 241, 0.7)"
+                                : "1px solid rgba(255,255,255,0.1)",
+                              color: selected
+                                ? "#fff"
+                                : "rgba(255,255,255,0.6)",
+                            }}
+                          >
+                            {date}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div
