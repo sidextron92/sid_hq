@@ -46,8 +46,15 @@ function OwnerDot({ ownerId, isHermes }: { ownerId: string; isHermes: boolean })
 }
 
 // ─── Single comment bubble ────────────────────────
-function CommentBubble({ comment }: { comment: PBTaskComment }) {
+function CommentBubble({ comment, currentUserId }: { comment: PBTaskComment; currentUserId: string }) {
   const isHermes = comment.owner === HERMES_USER_ID;
+  const isMe = comment.owner === currentUserId;
+  const authorLabel = isHermes ? "Hermes Agent" : isMe ? "You" : "User";
+  const authorColor = isHermes
+    ? "rgba(167,139,250,0.9)"
+    : isMe
+    ? "rgba(255,255,255,0.85)"
+    : "rgba(134,239,172,0.85)"; // soft green for other users
   return (
     <div className="flex items-start gap-3">
       <OwnerDot ownerId={comment.owner} isHermes={isHermes} />
@@ -55,9 +62,9 @@ function CommentBubble({ comment }: { comment: PBTaskComment }) {
         <div className="flex items-baseline gap-2 mb-1">
           <span
             className="text-xs font-bold"
-            style={{ color: isHermes ? "rgba(167,139,250,0.9)" : "rgba(255,255,255,0.85)" }}
+            style={{ color: authorColor }}
           >
-            {isHermes ? "Hermes Agent" : "You"}
+            {authorLabel}
           </span>
           <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
             {formatRelative(comment.created)}
@@ -174,7 +181,7 @@ export default function TaskCommentsPanel({
             No comments yet. Be the first to add one.
           </p>
         ) : (
-          comments.map((c) => <CommentBubble key={c.id} comment={c} />)
+          comments.map((c) => <CommentBubble key={c.id} comment={c} currentUserId={currentUserId} />)
         )}
         <div ref={listEndRef} />
       </div>

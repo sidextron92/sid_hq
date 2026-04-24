@@ -528,7 +528,7 @@ function mapComment(r: RecordModel): PBTaskComment {
 
 export async function fetchTaskComments(taskId: string): Promise<PBTaskComment[]> {
   const records = await pb.collection("task_comments").getFullList<RecordModel>({
-    filter: `task = "${taskId}"`,
+    filter: pb.filter("task = {:task}", { task: taskId }),
     sort: "created",
   });
   return records.map(mapComment);
