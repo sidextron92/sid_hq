@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import TiptapEditor, { stripHtml } from "@/components/TiptapEditor";
+import TaskCommentsPanel from "@/components/TaskCommentsPanel";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -384,6 +385,9 @@ export default function Home() {
   const [tagEditOpen, setTagEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Modal tab: "details" | "comments" (comments only visible in edit mode)
+  const [modalTab, setModalTab] = useState<"details" | "comments">("details");
+  const [commentCount, setCommentCount] = useState(0);
 
   // Recurring task modal state
   const [recurringEnabled, setRecurringEnabled] = useState(false);
@@ -1168,6 +1172,8 @@ export default function Home() {
         .filter(Boolean) as string[];
       setModalTags(taskTagNames);
       setModalTagInput("");
+      setModalTab("details");
+      setCommentCount(0);
 
       // Load recurring job data
       setRecurringEnabled(false);
@@ -1318,6 +1324,8 @@ export default function Home() {
     setRecurringPeriod("daily");
     setRecurringDays([]);
     setExistingRecurringJob(null);
+    setModalTab("details");
+    setCommentCount(0);
     const preferred =
       activeSpaceIdRef.current !== ALL_SPACES
         ? activeSpaceIdRef.current
@@ -1338,6 +1346,8 @@ export default function Home() {
     setRecurringPeriod("daily");
     setRecurringDays([]);
     setExistingRecurringJob(null);
+    setModalTab("details");
+    setCommentCount(0);
   }, []);
 
   // When space changes in the modal, clear the tag selection (tags are space-scoped)
@@ -1559,9 +1569,9 @@ export default function Home() {
         }
       }
 
-      // Enter → create/save task (only when task modal is open)
+      // Enter → create/save task (only when task modal is open AND on details tab)
       if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        if (modalOpen) {
+        if (modalOpen && modalTab === "details") {
           if (target.isContentEditable) return; // typing in TiptapEditor
           if (tagEditOpen) return;               // typing a new tag
           e.preventDefault();
@@ -1572,7 +1582,7 @@ export default function Home() {
 
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [modalOpen, spacesModalOpen, bgGalleryOpen, rainModalOpen, tagEditOpen, openAddTaskModal, handleSaveTask]);
+  }, [modalOpen, spacesModalOpen, bgGalleryOpen, rainModalOpen, tagEditOpen, modalTab, openAddTaskModal, handleSaveTask]);
 
   // ─── Render ─────────────────────────────────────
   if (authLoading || !user) return null;
@@ -1955,14 +1965,59 @@ export default function Home() {
           {isEditing ? "Edit Task" : "New Task"}
         </h2>
         <p
-          className="text-sm mb-6"
+          className="text-sm mb-4"
           style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
         >
           {isEditing ? "Update task details or delete it." : "Add a new task to the Backlog."}
         </p>
 
+        {/* ── Tab bar (edit mode only) ── */}
+        {isEditing && (
+          <div className="flex gap-1 mb-5 p-1 rounded-full" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", width: "fit-content" }}>
+            <button
+              type="button"
+              onClick={() => setModalTab("details")}
+              className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
+              style={{
+                background: modalTab === "details" ? "rgba(255,255,255,0.1)" : "transparent",
+                border: modalTab === "details" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
+                color: modalTab === "details" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                boxShadow: modalTab === "details" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
+              }}
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalTab("comments")}
+              className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
+              style={{
+                background: modalTab === "comments" ? "rgba(255,255,255,0.1)" : "transparent",
+                border: modalTab === "comments" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
+                color: modalTab === "comments" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+                boxShadow: modalTab === "comments" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
+              }}
+            >
+              Comments{commentCount > 0 && (
+                <span
+                  className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{
+                    background: "rgba(99,102,241,0.5)",
+                    border: "1px solid rgba(99,102,241,0.6)",
+                    color: "#fff",
+                  }}
+                >
+                  {commentCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-col gap-5">
-          {/* Space + Tags row */}
+          {/* ── Details tab content ── */}
+          {modalTab === "details" && (
+            <>
           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-5">
             {/* Space selector */}
             <div>
@@ -2292,6 +2347,18 @@ export default function Home() {
             )}
           </div>
 
+          </>
+          )}
+
+          {/* ── Comments tab content ── */}
+          {isEditing && modalTab === "comments" && (
+            <TaskCommentsPanel
+              taskId={(editingTask as { task: { id: string } }).task.id}
+              currentUserId={user.id}
+              onCountChange={setCommentCount}
+            />
+          )}
+
           <div
             className="sticky flex items-center -mx-8 -mb-8 px-8 pt-4 pb-8 mt-2"
             style={{
@@ -2305,8 +2372,8 @@ export default function Home() {
               zIndex: 5,
             }}
           >
-            {/* Delete button — only in edit mode */}
-            {isEditing && (
+            {/* Delete button — only in edit mode, details tab */}
+            {isEditing && modalTab === "details" && (
               <GlassButton
                 size="sm"
                 tint="rgba(239, 68, 68, 0.3)"
@@ -2338,6 +2405,7 @@ export default function Home() {
               <GlassButton size="sm" onClick={closeModal}>
                 Cancel
               </GlassButton>
+              {modalTab === "details" && (
               <GlassButton
                 size="sm"
                 tint="rgba(99, 102, 241, 0.3)"
@@ -2347,6 +2415,7 @@ export default function Home() {
                   ? isEditing ? "Saving..." : "Creating..."
                   : isEditing ? "Save" : "Create Task"}
               </GlassButton>
+              )}
             </div>
           </div>
         </div>

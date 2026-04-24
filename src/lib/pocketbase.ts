@@ -505,4 +505,46 @@ export async function fetchRecurringJobById(id: string): Promise<PBRecurringJob 
   }
 }
 
+// ─── Task Comments ─────────────────────────────────
+export interface PBTaskComment {
+  id: string;
+  task: string;       // task record ID
+  owner: string;      // user record ID
+  body: string;       // HTML from TiptapEditor
+  created: string;
+  updated: string;
+}
+
+function mapComment(r: RecordModel): PBTaskComment {
+  return {
+    id: r.id,
+    task: r.task,
+    owner: r.owner,
+    body: r.body ?? "",
+    created: r.created,
+    updated: r.updated,
+  };
+}
+
+export async function fetchTaskComments(taskId: string): Promise<PBTaskComment[]> {
+  const records = await pb.collection("task_comments").getFullList<RecordModel>({
+    filter: `task = "${taskId}"`,
+    sort: "created",
+  });
+  return records.map(mapComment);
+}
+
+export async function createTaskComment(data: {
+  taskId: string;
+  ownerId: string;
+  body: string;
+}): Promise<PBTaskComment> {
+  const record = await pb.collection("task_comments").create<RecordModel>({
+    task: data.taskId,
+    owner: data.ownerId,
+    body: data.body,
+  });
+  return mapComment(record);
+}
+
 export default pb;
