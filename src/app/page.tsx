@@ -2351,12 +2351,14 @@ export default function Home() {
           )}
 
           {/* ── Comments tab content ── */}
-          {isEditing && modalTab === "comments" && (
-            <TaskCommentsPanel
-              taskId={(editingTask as { task: { id: string } }).task.id}
-              currentUserId={user.id}
-              onCountChange={setCommentCount}
-            />
+          {isEditing && (
+            <div style={{ display: modalTab === "comments" ? "block" : "none" }}>
+              <TaskCommentsPanel
+                taskId={(editingTask as { task: { id: string } }).task.id}
+                currentUserId={user.id}
+                onCountChange={setCommentCount}
+              />
+            </div>
           )}
 
           <div

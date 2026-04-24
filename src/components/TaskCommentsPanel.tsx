@@ -73,15 +73,16 @@ function CommentBubble({ comment, currentUserId }: { comment: PBTaskComment; cur
         <div
           className="tiptap-editor rounded-xl"
           style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.09)",
+            background: "rgba(0,0,0,0.35)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            boxShadow: "inset 0 2px 8px rgba(0,0,0,0.4)",
             padding: "8px 12px",
           }}
         >
           {/* Render the HTML body read-only */}
           <div
             className="prose prose-invert max-w-none"
-            style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.82)" }}
+            style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.82)", userSelect: "text", cursor: "text" }}
             dangerouslySetInnerHTML={{ __html: comment.body }}
           />
         </div>
@@ -118,15 +119,15 @@ export default function TaskCommentsPanel({
     fetchTaskComments(taskId)
       .then((data) => {
         setComments(data);
-        onCountChangeRef.current?.(data.length);
       })
       .catch((err) => console.error("Failed to load comments:", err))
       .finally(() => setLoadingComments(false));
   }, [taskId]);
 
-  // Scroll to bottom when new comments arrive
+  // Scroll to bottom and sync count when comments change
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    onCountChangeRef.current?.(comments.length);
   }, [comments.length]);
 
   const isDraftEmpty = useCallback(() => {
@@ -145,11 +146,7 @@ export default function TaskCommentsPanel({
         ownerId: currentUserId,
         body: draftBody,
       });
-      setComments((prev) => {
-        const next = [...prev, newComment];
-        onCountChangeRef.current?.(next.length);
-        return next;
-      });
+      setComments((prev) => [...prev, newComment]);
       // Reset draft — set to empty paragraph so TiptapEditor re-renders blank
       setDraftBody("");
     } catch (err) {
