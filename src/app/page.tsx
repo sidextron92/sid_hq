@@ -365,6 +365,189 @@ function SearchToggle({
   );
 }
 
+// ─── Kanban Board (extracted + memoized) ────────────
+interface KanbanBoardProps {
+  loading: boolean;
+  board: Board;
+  searchQuery: string;
+  activeSpaceId: string;
+  allSpacesId: string;
+  draggedTaskId: string | null;
+  dropTarget: { column: string; index: number } | null;
+  tagMap: Record<string, PBTag>;
+  spaceMap: Record<string, PBSpace>;
+  boardScrollRef: React.RefObject<HTMLElement | null>;
+  columnRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+  cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+  onCardPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
+}
+
+const KanbanBoard = memo(function KanbanBoard({
+  loading,
+  board,
+  searchQuery,
+  activeSpaceId,
+  allSpacesId,
+  draggedTaskId,
+  dropTarget,
+  tagMap,
+  spaceMap,
+  boardScrollRef,
+  columnRefs,
+  cardRefs,
+  onCardPointerDown,
+}: KanbanBoardProps) {
+  return (
+    <main ref={boardScrollRef} className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
+      {loading && (
+        <div className="flex items-center justify-center h-full">
+          <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+            Loading tasks...
+          </p>
+        </div>
+      )}
+      <div className="flex gap-5 h-full" style={{ display: loading ? "none" : undefined }}>
+        {COLUMNS.map((column) => {
+          const query = searchQuery.trim().toLowerCase();
+          const spaceFiltered =
+            activeSpaceId === allSpacesId
+              ? board[column]
+              : board[column].filter((t) => t.space === activeSpaceId);
+          const tasks = query
+            ? spaceFiltered.filter((t) => {
+                if (t.title.toLowerCase().includes(query)) return true;
+                if (t.strippedDescription.includes(query)) return true;
+                return t.tags.some((tagId) => {
+                  const tag = tagMap[tagId];
+                  return tag && tag.name.toLowerCase().includes(query);
+                });
+              })
+            : spaceFiltered;
+          const visibleTasks = tasks.filter((t) => t.id !== draggedTaskId);
+          const isDropColumn = dropTarget?.column === column;
+
+          return (
+            <div
+              key={column}
+              ref={(el) => {
+                columnRefs.current[column] = el;
+              }}
+              className="flex flex-col h-full rounded-2xl overflow-clip min-w-[220px] flex-1"
+              style={{
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+                background: "rgba(0, 0, 0, 0.1)",
+              }}
+            >
+              {/* Column header */}
+              <div className="flex-shrink-0 p-3">
+                <LiquidGlassWrap
+                  cornerRadius={14}
+                  padding="12px 16px"
+                  blurAmount={12}
+                  displacementScale={40}
+                  elasticity={0}
+                  shadowIntensity={0.5}
+                >
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-bold uppercase tracking-widest">
+                      {column}
+                    </h2>
+                    <span
+                      className="text-xs font-bold px-2 py-0.5 rounded-full"
+                      style={{
+                        background: "rgba(255, 255, 255, 0.1)",
+                        color: "#ffffff",
+                      }}
+                    >
+                      {tasks.length}
+                    </span>
+                  </div>
+                </LiquidGlassWrap>
+              </div>
+
+              {/* Cards area */}
+              <div className="flex-1 overflow-y-auto overflow-x-visible px-3 pb-3">
+                <div className="flex flex-col gap-3">
+                  {tasks.map((task) => {
+                    const visibleIndex = visibleTasks.indexOf(task);
+
+                    return (
+                      <Fragment key={task.id}>
+                        {/* Drop indicator gap */}
+                        {task.id !== draggedTaskId &&
+                          isDropColumn &&
+                          dropTarget.index === visibleIndex && (
+                            <div
+                              className="rounded-xl"
+                              style={{
+                                height: 72,
+                                background: "rgba(99, 102, 241, 0.08)",
+                                border:
+                                  "2px dashed rgba(99, 102, 241, 0.25)",
+                                transition: "height 0.2s ease",
+                              }}
+                            />
+                          )}
+
+                        <div
+                          ref={(el) => {
+                            cardRefs.current[task.id] = el;
+                          }}
+                          onPointerDown={(e) =>
+                            onCardPointerDown(e, task, column)
+                          }
+                          className=""
+                          style={{
+                            cursor: "grab",
+                            touchAction: "pan-x pan-y",
+                            WebkitUserSelect: "none",
+                            userSelect: "none",
+                            WebkitTouchCallout: "none",
+                          }}
+                        >
+                          <LiquidGlassWrap
+                            cornerRadius={16}
+                            padding="14px 16px"
+                            blurAmount={6}
+                            overLight
+                            elasticity={0.2}
+                            shadowIntensity={0.8}
+                          >
+                            <TaskCardContent
+                              task={task}
+                              tagMap={tagMap}
+                              spaceMap={spaceMap}
+                              showSpacePill={activeSpaceId === allSpacesId}
+                            />
+                          </LiquidGlassWrap>
+                        </div>
+                      </Fragment>
+                    );
+                  })}
+
+                  {/* Drop indicator at end of column */}
+                  {isDropColumn &&
+                    dropTarget.index === visibleTasks.length && (
+                      <div
+                        className="rounded-xl"
+                        style={{
+                          height: 72,
+                          background: "rgba(99, 102, 241, 0.08)",
+                          border: "2px dashed rgba(99, 102, 241, 0.25)",
+                          transition: "height 0.2s ease",
+                        }}
+                      />
+                    )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </main>
+  );
+});
+
 // ─── Component ──────────────────────────────────────
 export default function Home() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -1796,157 +1979,21 @@ export default function Home() {
         </header>
 
         {/* Kanban board */}
-        <main ref={boardScrollRef} className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
-          {loading && (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
-                Loading tasks...
-              </p>
-            </div>
-          )}
-          <div className="flex gap-5 h-full" style={{ display: loading ? "none" : undefined }}>
-            {COLUMNS.map((column) => {
-              const query = searchQuery.trim().toLowerCase();
-              // First filter by active space, then by search query
-              const spaceFiltered =
-                activeSpaceId === ALL_SPACES
-                  ? board[column]
-                  : board[column].filter((t) => t.space === activeSpaceId);
-              const tasks = query
-                ? spaceFiltered.filter((t) => {
-                    if (t.title.toLowerCase().includes(query)) return true;
-                    if (t.strippedDescription.includes(query)) return true;
-                    return t.tags.some((tagId) => {
-                      const tag = tagMap[tagId];
-                      return tag && tag.name.toLowerCase().includes(query);
-                    });
-                  })
-                : spaceFiltered;
-              const visibleTasks = tasks.filter(
-                (t) => t.id !== draggedTaskId
-              );
-              const isDropColumn = dropTarget?.column === column;
-
-              return (
-                <div
-                  key={column}
-                  ref={(el) => {
-                    columnRefs.current[column] = el;
-                  }}
-                  className="flex flex-col h-full rounded-2xl overflow-clip min-w-[220px] flex-1"
-                  style={{
-                    border: "1px solid rgba(255, 255, 255, 0.06)",
-                    background: "rgba(0, 0, 0, 0.1)",
-                  }}
-                >
-                  {/* Column header */}
-                  <div className="flex-shrink-0 p-3">
-                    <LiquidGlassWrap
-                      cornerRadius={14}
-                      padding="12px 16px"
-                      blurAmount={12}
-                      displacementScale={40}
-                      elasticity={0}
-                      shadowIntensity={0.5}
-                    >
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-sm font-bold uppercase tracking-widest">
-                          {column}
-                        </h2>
-                        <span
-                          className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{
-                            background: "rgba(255, 255, 255, 0.1)",
-                            color: "#ffffff",
-                          }}
-                        >
-                          {tasks.length}
-                        </span>
-                      </div>
-                    </LiquidGlassWrap>
-                  </div>
-
-                  {/* Cards area */}
-                  <div className="flex-1 overflow-y-auto overflow-x-visible px-3 pb-3">
-                    <div className="flex flex-col gap-3">
-                      {tasks.map((task, i) => {
-                        const visibleIndex = visibleTasks.indexOf(task);
-
-                        return (
-                          <Fragment key={task.id}>
-                            {/* Drop indicator gap */}
-                            {task.id !== draggedTaskId &&
-                              isDropColumn &&
-                              dropTarget.index === visibleIndex && (
-                                <div
-                                  className="rounded-xl"
-                                  style={{
-                                    height: 72,
-                                    background: "rgba(99, 102, 241, 0.08)",
-                                    border:
-                                      "2px dashed rgba(99, 102, 241, 0.25)",
-                                    transition: "height 0.2s ease",
-                                  }}
-                                />
-                              )}
-
-                            <div
-                              ref={(el) => {
-                                cardRefs.current[task.id] = el;
-                              }}
-                              onPointerDown={(e) =>
-                                handleCardPointerDown(e, task, column)
-                              }
-                              className=""
-                              style={{
-                                cursor: "grab",
-                                // Allow native vertical/horizontal scroll until long-press activates drag
-                                touchAction: "pan-x pan-y",
-                                WebkitUserSelect: "none",
-                                userSelect: "none",
-                                WebkitTouchCallout: "none",
-                              }}
-                            >
-                              <LiquidGlassWrap
-                                cornerRadius={16}
-                                padding="14px 16px"
-                                blurAmount={6}
-                                overLight
-                                elasticity={0.2}
-                                shadowIntensity={0.8}
-                              >
-                                <TaskCardContent
-                                  task={task}
-                                  tagMap={tagMap}
-                                  spaceMap={spaceMap}
-                                  showSpacePill={activeSpaceId === ALL_SPACES}
-                                />
-                              </LiquidGlassWrap>
-                            </div>
-                          </Fragment>
-                        );
-                      })}
-
-                      {/* Drop indicator at end of column */}
-                      {isDropColumn &&
-                        dropTarget.index === visibleTasks.length && (
-                          <div
-                            className="rounded-xl"
-                            style={{
-                              height: 72,
-                              background: "rgba(99, 102, 241, 0.08)",
-                              border: "2px dashed rgba(99, 102, 241, 0.25)",
-                              transition: "height 0.2s ease",
-                            }}
-                          />
-                        )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </main>
+        <KanbanBoard
+          loading={loading}
+          board={board}
+          searchQuery={searchQuery}
+          activeSpaceId={activeSpaceId}
+          allSpacesId={ALL_SPACES}
+          draggedTaskId={draggedTaskId}
+          dropTarget={dropTarget}
+          tagMap={tagMap}
+          spaceMap={spaceMap}
+          boardScrollRef={boardScrollRef}
+          columnRefs={columnRefs}
+          cardRefs={cardRefs}
+          onCardPointerDown={handleCardPointerDown}
+        />
       </div>
 
       {/* Rain overlay */}
