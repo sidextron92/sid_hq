@@ -43,10 +43,10 @@ import {
 } from "@/lib/pocketbase";
 
 const TiptapEditor = dynamic(() => import("@/components/TiptapEditor"), { ssr: false });
-const RainOverlay = dynamic(() => import("@/components/RainOverlay"), { ssr: false });
-const ManageSpacesModal = dynamic(() => import("@/components/ManageSpacesModal"), { ssr: false });
-const BackgroundGalleryModal = dynamic(() => import("@/components/BackgroundGalleryModal"), { ssr: false });
-const TaskCommentsPanel = dynamic(() => import("@/components/TaskCommentsPanel"), { ssr: false });
+import RainOverlay from "@/components/RainOverlay";
+import ManageSpacesModal from "@/components/ManageSpacesModal";
+import BackgroundGalleryModal from "@/components/BackgroundGalleryModal";
+import TaskCommentsPanel from "@/components/TaskCommentsPanel";
 
 const ALL_SPACES = "__all__";
 const ACTIVE_SPACE_STORAGE_KEY = "controlcentre.activeSpaceId";
