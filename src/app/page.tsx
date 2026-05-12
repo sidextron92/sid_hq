@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { stripHtml, fastStripHtml } from "@/lib/html";
+import { stripHtml } from "@/lib/html";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -59,7 +59,6 @@ interface Task {
   space: string;
   tags: string[]; // tag record IDs
   recurring_job_id?: string; // linked recurring job (empty or absent if none)
-  strippedDescription: string; // DOM-free plain text for fast search
 }
 
 type Board = Record<string, Task[]>;
@@ -382,7 +381,7 @@ interface KanbanBoardProps {
   onCardPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
 }
 
-const KanbanBoard = memo(function KanbanBoard({
+function KanbanBoard({
   loading,
   board,
   searchQuery,
@@ -416,7 +415,7 @@ const KanbanBoard = memo(function KanbanBoard({
           const tasks = query
             ? spaceFiltered.filter((t) => {
                 if (t.title.toLowerCase().includes(query)) return true;
-                if (t.strippedDescription.includes(query)) return true;
+                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
                 return t.tags.some((tagId) => {
                   const tag = tagMap[tagId];
                   return tag && tag.name.toLowerCase().includes(query);
@@ -546,7 +545,7 @@ const KanbanBoard = memo(function KanbanBoard({
       </div>
     </main>
   );
-});
+}
 
 // ─── Component ──────────────────────────────────────
 export default function Home() {
@@ -823,7 +822,6 @@ export default function Home() {
             space: task.space,
             tags: task.tags,
             recurring_job_id: task.recurring_job_id || undefined,
-            strippedDescription: fastStripHtml(task.description).toLowerCase(),
           });
         }
       }
@@ -880,7 +878,6 @@ export default function Home() {
               description: task.description,
               space: task.space,
               tags: task.tags,
-              strippedDescription: fastStripHtml(task.description).toLowerCase(),
             });
           }
         }
@@ -1111,7 +1108,7 @@ export default function Home() {
             const filtered = query
               ? spaceTasks.filter((t) => {
                   if (t.title.toLowerCase().includes(query)) return true;
-                  if (t.strippedDescription.includes(query)) return true;
+                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
                   const tm = tagMapRef.current;
                   return t.tags.some((tagId) => {
                     const tag = tm[tagId];
@@ -1246,7 +1243,7 @@ export default function Home() {
               if (spaceId !== ALL_SPACES && t.space !== spaceId) return false;
               if (query) {
                 if (t.title.toLowerCase().includes(query)) return true;
-                 if (t.strippedDescription.includes(query)) return true;
+                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
                 const tm = tagMapRef.current;
                 return t.tags.some((tagId) => {
                   const tag = tm[tagId];
@@ -1649,7 +1646,6 @@ export default function Home() {
           space: modalSpaceId,
           tags: tagIds,
           recurring_job_id: task.recurring_job_id,
-          strippedDescription: fastStripHtml(modalDescription).toLowerCase(),
         };
 
         setBoard((prev) => ({
@@ -1691,7 +1687,6 @@ export default function Home() {
           space: pbTask.space,
           tags: pbTask.tags,
           recurring_job_id: recurringJobId,
-          strippedDescription: fastStripHtml(pbTask.description).toLowerCase(),
         };
 
         setBoard((prev) => ({
