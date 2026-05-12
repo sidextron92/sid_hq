@@ -51,7 +51,26 @@ export default function LiquidGlassWrap({
   const [isHovered, setIsHovered] = useState(false);
   const [elasticTransform, setElasticTransform] = useState({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
 
-  // Track mouse for border shine + elasticity
+  // RAF-batch frequent mouse updates so a card never triggers more than one React render per frame
+  const rafRef = useRef<number | null>(null);
+  const pendingRef = useRef<{
+    mouseOffset: { x: number; y: number };
+    mousePos: { x: number; y: number };
+    elasticTransform: { x: number; y: number; scaleX: number; scaleY: number } | null;
+  } | null>(null);
+
+  const flushMouseUpdates = useCallback(() => {
+    rafRef.current = null;
+    const p = pendingRef.current;
+    if (!p) return;
+    pendingRef.current = null;
+    setMouseOffset(p.mouseOffset);
+    setMousePos(p.mousePos);
+    if (p.elasticTransform) {
+      setElasticTransform(p.elasticTransform);
+    }
+  }, []);
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (!glassRef.current) return;
@@ -60,13 +79,14 @@ export default function LiquidGlassWrap({
       const cy = rect.top + rect.height / 2;
       const offX = ((e.clientX - cx) / rect.width) * 100;
       const offY = ((e.clientY - cy) / rect.height) * 100;
-      setMouseOffset({ x: offX, y: offY });
 
-      setMousePos({
+      const nextMouseOffset = { x: offX, y: offY };
+      const nextMousePos = {
         x: (e.clientX - rect.left) / rect.width,
         y: (e.clientY - rect.top) / rect.height,
-      });
+      };
 
+      let nextElastic: typeof elasticTransform | null = null;
       if (elasticity > 0) {
         const deltaX = e.clientX - cx;
         const deltaY = e.clientY - cy;
@@ -85,18 +105,28 @@ export default function LiquidGlassWrap({
           const stretch = Math.min(dist / 300, 1) * elasticity * fade;
           const sx = 1 + normX * stretch * 0.3 - normY * stretch * 0.15;
           const sy = 1 + normY * stretch * 0.3 - normX * stretch * 0.15;
-          setElasticTransform({
+          nextElastic = {
             x: tx,
             y: ty,
             scaleX: Math.max(0.85, sx),
             scaleY: Math.max(0.85, sy),
-          });
+          };
         } else {
-          setElasticTransform({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
+          nextElastic = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
         }
       }
+
+      pendingRef.current = {
+        mouseOffset: nextMouseOffset,
+        mousePos: nextMousePos,
+        elasticTransform: nextElastic,
+      };
+
+      if (rafRef.current === null) {
+        rafRef.current = requestAnimationFrame(flushMouseUpdates);
+      }
     },
-    [elasticity]
+    [elasticity, flushMouseUpdates]
   );
 
   const handleMouseEnter = useCallback(() => {
@@ -105,7 +135,13 @@ export default function LiquidGlassWrap({
 
   const handleMouseLeave = useCallback(() => {
     setIsHovered(false);
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    pendingRef.current = null;
     setMouseOffset({ x: 0, y: 0 });
+    setMousePos({ x: 0.5, y: 0.5 });
     if (elasticity > 0) {
       setElasticTransform({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
     }

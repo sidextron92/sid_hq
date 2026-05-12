@@ -448,13 +448,5 @@ export default function TiptapEditor({
   );
 }
 
-// ─── Utility: strip HTML for plain-text excerpts ──
-export function stripHtml(html: string): string {
-  if (typeof document !== "undefined") {
-    const div = document.createElement("div");
-    div.innerHTML = html;
-    return div.textContent || div.innerText || "";
-  }
-  // SSR fallback
-  return html.replace(/<[^>]*>/g, "");
-}
+// Re-export for backwards compatibility — moved to @/lib/html to enable tree-shaking / code splitting
+export { stripHtml } from "@/lib/html";

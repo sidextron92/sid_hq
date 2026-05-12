@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo, memo } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import TiptapEditor, { stripHtml } from "@/components/TiptapEditor";
-import TaskCommentsPanel from "@/components/TaskCommentsPanel";
+import { stripHtml } from "@/lib/html";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -17,9 +17,7 @@ import {
 } from "@/components/glass";
 import gsap from "gsap";
 import { useAuth } from "@/context/AuthContext";
-import RainOverlay, { type RainConfig } from "@/components/RainOverlay";
-import ManageSpacesModal from "@/components/ManageSpacesModal";
-import BackgroundGalleryModal from "@/components/BackgroundGalleryModal";
+import type { RainConfig } from "@/components/RainOverlay";
 import {
   fetchTasks,
   fetchTags,
@@ -43,6 +41,12 @@ import {
   type PBBackground,
   type PBRecurringJob,
 } from "@/lib/pocketbase";
+
+const TiptapEditor = dynamic(() => import("@/components/TiptapEditor"), { ssr: false });
+const RainOverlay = dynamic(() => import("@/components/RainOverlay"), { ssr: false });
+const ManageSpacesModal = dynamic(() => import("@/components/ManageSpacesModal"), { ssr: false });
+const BackgroundGalleryModal = dynamic(() => import("@/components/BackgroundGalleryModal"), { ssr: false });
+const TaskCommentsPanel = dynamic(() => import("@/components/TaskCommentsPanel"), { ssr: false });
 
 const ALL_SPACES = "__all__";
 const ACTIVE_SPACE_STORAGE_KEY = "controlcentre.activeSpaceId";
@@ -70,7 +74,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 // ─── Task card content ──────────────────────────────
-function TaskCardContent({
+const TaskCardContent = memo(function TaskCardContent({
   task,
   tagMap,
   spaceMap,
@@ -155,7 +159,7 @@ function TaskCardContent({
       )}
     </>
   );
-}
+});
 
 // ─── Search toggle (icon → expanded input) ─────────
 function SearchToggle({

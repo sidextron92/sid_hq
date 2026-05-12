@@ -92,6 +92,8 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
   const rafRef = useRef<number>(0);
   const activeRef = useRef(active);
   const configRef = useRef(config);
+  const rectCacheRef = useRef<DOMRect[]>([]);
+  const frameCountRef = useRef(0);
 
   activeRef.current = active;
   configRef.current = config;
@@ -163,23 +165,34 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
     const w = window.innerWidth;
     const h = window.innerHeight;
     const c = getConfig(configRef.current);
-    dropsRef.current = Array.from({ length: c.dropCount }, () => createDrop(w, h, false));
+    // Only seed drops when active; otherwise tick self-terminates immediately
+    if (active) {
+      dropsRef.current = Array.from({ length: c.dropCount }, () => createDrop(w, h, false));
+    }
 
     const tick = () => {
-      if (!activeRef.current) {
-        if (dropsRef.current.length === 0 && splattersRef.current.length === 0) {
-          ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-          return;
-        }
-      }
-
       const currentW = window.innerWidth;
       const currentH = window.innerHeight;
-      const currentCfg = getConfig(configRef.current);
 
+      // Self-terminate when inactive and nothing left to render
+      if (!activeRef.current && dropsRef.current.length === 0 && splattersRef.current.length === 0) {
+        ctx.clearRect(0, 0, currentW, currentH);
+        rafRef.current = 0;
+        return;
+      }
+
+      const currentCfg = getConfig(configRef.current);
       ctx.clearRect(0, 0, currentW, currentH);
 
-      const cardRects = getCardRects();
+      // Cache card rects: refresh every 3rd frame only while rain is active
+      let cardRects: DOMRect[] = [];
+      if (activeRef.current) {
+        frameCountRef.current++;
+        if (frameCountRef.current % 3 === 0 || rectCacheRef.current.length === 0) {
+          rectCacheRef.current = getCardRects();
+        }
+        cardRects = rectCacheRef.current;
+      }
 
       // ─── Update & draw rain drops ────────────────
       const newDrops: RainDrop[] = [];
@@ -297,6 +310,7 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
 
     return () => {
       cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       window.removeEventListener("resize", resize);
     };
   }, [active, createDrop, createSplatter, getCardRects]);
