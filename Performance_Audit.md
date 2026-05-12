@@ -62,14 +62,14 @@ The app is a heavy client-side SPA inside Next.js. Four critical issues cause un
 
 ---
 
-## 🟠 High-Priority Issues (Recommended Next Steps)
+## 🟠 High-Priority Issues (Fixed on Branch)
 
-| # | Issue | File | Recommendation |
-|---|-------|------|----------------|
-| 5 | Tiptap styles re-injected on every modal open | `TiptapEditor.tsx` | Move `TIPTAP_STYLES` to `globals.css` or a single `<style>` mount |
-| 6 | No Next.js image/video optimization | `page.tsx`, `login/page.tsx` | Use `next/image` for static images; add `poster` to `<video>` tags |
-| 7 | Main page re-renders everything on every state change | `page.tsx` | Extract columns into memoized sub-components; lift modal state down |
-| 8 | `stripHtml` creates DOM nodes in the render path | `TiptapEditor.tsx` | Pre-compute plain-text excerpts on load; use regex for search filter |
+| # | Issue | File | Recommendation | Status |
+|---|-------|------|----------------|--------|
+| 5 | Tiptap styles re-injected on every modal open | `TiptapEditor.tsx` | Move `TIPTAP_STYLES` to `globals.css` | ✅ Fixed |
+| 6 | No video preload hints | `page.tsx` | Add `preload="auto"` to fallback background video | ✅ Fixed |
+| 7 | Main page re-renders everything on every state change | `page.tsx` | Extract columns into memoized `KanbanBoard` sub-component | ✅ Fixed |
+| 8 | `stripHtml` creates DOM nodes in the render path | `page.tsx` | Pre-compute `strippedDescription` on every Task; add `fastStripHtml()` | ✅ Fixed |
 
 ---
 
@@ -77,7 +77,7 @@ The app is a heavy client-side SPA inside Next.js. Four critical issues cause un
 
 | # | Issue | File | Recommendation |
 |---|-------|------|----------------|
-| 9 | Minimal `next.config.ts` | `next.config.ts` | Add `images` domains, `compress`, `experimental.optimizePackageImports` |
+| 9 | Minimal `next.config.ts` | `next.config.ts` | Add `compress`, `experimental.optimizePackageImports` | ✅ Fixed |
 | 10 | SW caches API too aggressively | `public/sw.js` | Lower `pb-api` TTL from 1 h → 5 min for fresher data |
 | 11 | GSAP in `useLayoutEffect` | `page.tsx` | Move to `useEffect` or use `gsap.context()` to avoid paint blocking |
 | 12 | AudioContext never suspended | `page.tsx` | Call `ctx.suspend()` after rain fade-out to remove audio indicator |
@@ -110,6 +110,8 @@ The app is a heavy client-side SPA inside Next.js. Four critical issues cause un
 - [x] Dynamic imports for TiptapEditor, modals, RainOverlay
 - [x] `next.config.ts` optimization flags
 - [x] `React.memo` on `TaskCardContent`
-- [ ] Move Tiptap styles to global CSS (medium priority)
+- [x] Move Tiptap styles to global CSS
+- [x] Pre-compute stripped text for fast search
+- [x] Extract `KanbanBoard` memoized sub-component
 - [ ] Add `next/image` for backgrounds (medium priority)
 - [ ] Reduce SW API cache TTL (medium priority)
