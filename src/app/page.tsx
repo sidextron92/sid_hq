@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo, memo } from "react";
+import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { stripHtml, fastStripHtml } from "@/lib/html";
@@ -617,11 +617,10 @@ export default function Home() {
   }, [rainModalOpen]);
 
   // Animate the rain sliders' visibility when rainActive toggles.
-  // Uses useLayoutEffect so the initial collapsed state is applied
-  // before paint (no flash of expanded sliders on mount). Keyed on
-  // rainModalOpen too because the wrapper element only exists while
+  // Uses useEffect so GSAP doesn't block the browser's paint.
+  // Keyed on rainModalOpen too because the wrapper element only exists while
   // the modal is mounted — the effect must re-run on modal open.
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!rainModalOpen) return;
     const wrap = rainSlidersRef.current;
     if (!wrap) return;
@@ -749,6 +748,9 @@ export default function Home() {
           source.disconnect();
           rainSourceRef.current = null;
           rainFadeRef.current = null;
+          if (rainCtxRef.current) {
+            rainCtxRef.current.suspend();
+          }
         },
       });
     }
