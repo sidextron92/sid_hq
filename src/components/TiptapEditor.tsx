@@ -275,87 +275,6 @@ function Toolbar({ editor, inTable }: { editor: ReturnType<typeof useEditor> | n
   );
 }
 
-// ─── Editor styles (injected once) ────────────────
-const TIPTAP_STYLES = `
-.tiptap-editor .ProseMirror {
-  outline: none;
-  min-height: 100px;
-  padding: 12px;
-  color: #fff;
-  font-size: 14px;
-  line-height: 1.6;
-}
-.tiptap-editor .ProseMirror p { margin: 0.25em 0; }
-.tiptap-editor .ProseMirror h2 { font-size: 1.25em; font-weight: 700; margin: 0.75em 0 0.25em; }
-.tiptap-editor .ProseMirror h3 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.25em; }
-.tiptap-editor .ProseMirror ul { list-style: disc; padding-left: 1.5em; margin: 0.25em 0; }
-.tiptap-editor .ProseMirror ol { list-style: decimal; padding-left: 1.5em; margin: 0.25em 0; }
-.tiptap-editor .ProseMirror li { margin: 0.15em 0; }
-.tiptap-editor .ProseMirror blockquote {
-  border-left: 3px solid rgba(255,255,255,0.25);
-  padding-left: 1em;
-  margin: 0.5em 0;
-  color: rgba(255,255,255,0.7);
-}
-.tiptap-editor .ProseMirror code {
-  background: rgba(255,255,255,0.1);
-  border-radius: 4px;
-  padding: 0.15em 0.3em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9em;
-}
-.tiptap-editor .ProseMirror pre {
-  background: rgba(0,0,0,0.3);
-  border-radius: 8px;
-  padding: 0.75em 1em;
-  margin: 0.5em 0;
-  overflow-x: auto;
-}
-.tiptap-editor .ProseMirror pre code {
-  background: none;
-  padding: 0;
-  border-radius: 0;
-}
-.tiptap-editor .ProseMirror a {
-  color: #93c5fd;
-  text-decoration: underline;
-  cursor: pointer;
-}
-.tiptap-editor .ProseMirror img {
-  max-width: 100%;
-  border-radius: 8px;
-  margin: 0.5em 0;
-}
-.tiptap-editor .ProseMirror hr {
-  border: none;
-  border-top: 1px solid rgba(255,255,255,0.15);
-  margin: 0.75em 0;
-}
-.tiptap-editor .ProseMirror .tableWrapper {
-  overflow-x: auto;
-  margin: 0.5em 0;
-}
-.tiptap-editor .ProseMirror table {
-  border-collapse: collapse;
-  margin: 0;
-}
-.tiptap-editor .ProseMirror th,
-.tiptap-editor .ProseMirror td {
-  border: 1px solid rgba(255,255,255,0.2);
-  padding: 6px 10px;
-  text-align: left;
-  min-width: 60px;
-}
-.tiptap-editor .ProseMirror th {
-  background: rgba(255,255,255,0.08);
-  font-weight: 600;
-}
-.tiptap-toolbar-btn:hover {
-  background: rgba(255,255,255,0.1) !important;
-  color: #fff !important;
-}
-`;
-
 // ─── Main Component ────────────────────────────────
 export default function TiptapEditor({
   content,
@@ -429,22 +348,19 @@ export default function TiptapEditor({
   }, [editor]);
 
   return (
-    <>
-      <style>{TIPTAP_STYLES}</style>
-      <div
-        className="tiptap-editor rounded-2xl overflow-hidden"
-        style={{
-          background: "rgba(0,0,0,0.35)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          boxShadow: "inset 0 2px 8px rgba(0,0,0,0.4)",
-        }}
-      >
+    <div
+      className="tiptap-editor rounded-2xl overflow-hidden"
+      style={{
+        background: "rgba(0,0,0,0.35)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "inset 0 2px 8px rgba(0,0,0,0.4)",
+      }}
+    >
         <Toolbar editor={editor} inTable={inTable} />
         <div style={{ overflowX: "auto" }}>
           <EditorContent editor={editor} />
         </div>
-      </div>
-    </>
+    </div>
   );
 }
 

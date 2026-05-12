@@ -7,3 +7,8 @@ export function stripHtml(html: string): string {
   // SSR fallback
   return html.replace(/<[^>]*>/g, "");
 }
+
+/** Lightweight, DOM-free HTML strip for performance-critical paths (e.g. search filters). */
+export function fastStripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "");
+}
