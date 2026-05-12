@@ -78,9 +78,9 @@ The app is a heavy client-side SPA inside Next.js. Four critical issues cause un
 | # | Issue | File | Recommendation |
 |---|-------|------|----------------|
 | 9 | Minimal `next.config.ts` | `next.config.ts` | Add `compress`, `experimental.optimizePackageImports` | ✅ Fixed |
-| 10 | SW caches API too aggressively | `public/sw.js` | Lower `pb-api` TTL from 1 h → 5 min for fresher data |
-| 11 | GSAP in `useLayoutEffect` | `page.tsx` | Move to `useEffect` or use `gsap.context()` to avoid paint blocking |
-| 12 | AudioContext never suspended | `page.tsx` | Call `ctx.suspend()` after rain fade-out to remove audio indicator |
+| 10 | SW caches API too aggressively | `public/sw.js` | Lower `pb-api` TTL from 1 h → 5 min for fresher data | ✅ Fixed |
+| 11 | GSAP in `useLayoutEffect` | `page.tsx` | Move to `useEffect` to avoid paint blocking | ✅ Fixed |
+| 12 | AudioContext never suspended | `page.tsx` | Call `ctx.suspend()` after rain fade-out to remove audio indicator | ✅ Fixed |
 
 ---
 
