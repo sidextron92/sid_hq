@@ -383,11 +383,13 @@ export async function reorderColumn(
   taskIds: string[]
 ): Promise<void> {
   const status = columnToStatus(column);
-  await Promise.all(
-    taskIds.map((id, index) =>
-      pb.collection("tasks").update(id, { status, sort_order: index + 1 })
-    )
-  );
+  // Serialize updates to avoid SQLite write-lock contention
+  for (let i = 0; i < taskIds.length; i++) {
+    await pb.collection("tasks").update(taskIds[i], {
+      status,
+      sort_order: i + 1,
+    });
+  }
 }
 
 // ─── Backgrounds ───────────────────────────────────

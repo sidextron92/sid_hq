@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo, memo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { stripHtml } from "@/lib/html";
@@ -396,6 +396,39 @@ function KanbanBoard({
   cardRefs,
   onCardPointerDown,
 }: KanbanBoardProps) {
+  // ─── FLIP: animate cards that shift when the drop indicator moves ──
+  const prevRectsRef = useRef<Record<string, { top: number; height: number }>>({});
+  useLayoutEffect(() => {
+    const newRects: Record<string, { top: number; height: number }> = {};
+    for (const [id, el] of Object.entries(cardRefs.current)) {
+      if (el && window.getComputedStyle(el).position !== "fixed") {
+        const r = el.getBoundingClientRect();
+        newRects[id] = { top: r.top, height: r.height };
+      }
+    }
+
+    const prev = prevRectsRef.current;
+    if (Object.keys(prev).length > 0) {
+      for (const [id, oldPos] of Object.entries(prev)) {
+        const newPos = newRects[id];
+        if (!newPos) continue;
+        const deltaY = oldPos.top - newPos.top;
+        if (Math.abs(deltaY) > 1 && Math.abs(deltaY) < 300) {
+          const el = cardRefs.current[id];
+          if (el) {
+            gsap.fromTo(
+              el,
+              { y: deltaY },
+              { y: 0, duration: 0.2, ease: "power2.out" }
+            );
+          }
+        }
+      }
+    }
+
+    prevRectsRef.current = newRects;
+  });
+
   return (
     <main ref={boardScrollRef} className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
       {loading && (
@@ -1039,6 +1072,7 @@ export default function Home() {
       document.body.style.overflow = "hidden";
       document.documentElement.style.touchAction = "none";
       document.body.style.touchAction = "none";
+      document.body.classList.add("is-dragging");
 
       const blockTouchMove = (ev: TouchEvent) => {
         if (ev.cancelable) ev.preventDefault();
@@ -1197,6 +1231,7 @@ export default function Home() {
         document.body.style.overflow = prevBodyOverflow;
         document.documentElement.style.touchAction = prevHtmlTouchAction;
         document.body.style.touchAction = prevBodyTouchAction;
+        document.body.classList.remove("is-dragging");
         stopAutoScroll();
 
         const d = dragRef.current;
@@ -1483,17 +1518,17 @@ export default function Home() {
         gsap.to(colEl, {
           boxShadow:
             "inset 0 0 40px rgba(99, 102, 241, 0.12), 0 0 24px rgba(99, 102, 241, 0.08)",
-          borderColor: "rgba(99, 102, 241, 0.35)",
-          scale: 1.015,
-          duration: 0.3,
+          borderColor: "rgba(99, 102, 241, 0.45)",
+          backgroundColor: "rgba(99, 102, 241, 0.06)",
+          duration: 0.2,
           ease: "power2.out",
         });
       } else {
         gsap.to(colEl, {
           boxShadow: "none",
           borderColor: "rgba(255, 255, 255, 0.06)",
-          scale: 1,
-          duration: 0.3,
+          backgroundColor: "rgba(0, 0, 0, 0.1)",
+          duration: 0.2,
           ease: "power2.out",
         });
       }
