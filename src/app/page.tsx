@@ -1072,7 +1072,6 @@ export default function Home() {
       document.body.style.overflow = "hidden";
       document.documentElement.style.touchAction = "none";
       document.body.style.touchAction = "none";
-      document.body.classList.add("is-dragging");
 
       const blockTouchMove = (ev: TouchEvent) => {
         if (ev.cancelable) ev.preventDefault();
@@ -1231,7 +1230,6 @@ export default function Home() {
         document.body.style.overflow = prevBodyOverflow;
         document.documentElement.style.touchAction = prevHtmlTouchAction;
         document.body.style.touchAction = prevBodyTouchAction;
-        document.body.classList.remove("is-dragging");
         stopAutoScroll();
 
         const d = dragRef.current;
