@@ -81,8 +81,8 @@ function CommentBubble({ comment, currentUserId }: { comment: PBTaskComment; cur
         >
           {/* Render the HTML body read-only */}
           <div
-            className="prose prose-invert max-w-none"
-            style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.82)", userSelect: "text", cursor: "text" }}
+            className="ProseMirror"
+            style={{ color: "rgba(255,255,255,0.82)", userSelect: "text", cursor: "text", padding: 0, minHeight: 0 }}
             dangerouslySetInnerHTML={{ __html: comment.body }}
           />
         </div>
