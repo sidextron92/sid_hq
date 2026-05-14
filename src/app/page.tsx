@@ -50,6 +50,12 @@ import RainOverlay from "@/components/RainOverlay";
 
 const ALL_SPACES = "__all__";
 const ACTIVE_SPACE_STORAGE_KEY = "controlcentre.activeSpaceId";
+const SHOW_ALL_DONE_KEY = "controlcentre.showAllDone";
+
+const pickSound = typeof Audio !== "undefined" ? new Audio("/sounds/cardpicksound.mp3") : null;
+if (pickSound) pickSound.volume = 0.5;
+const dropSound = typeof Audio !== "undefined" ? new Audio("/sounds/carddropsound.mp3") : null;
+if (dropSound) dropSound.volume = 0.5;
 
 // ─── Types ──────────────────────────────────────────
 interface Task {
@@ -59,6 +65,7 @@ interface Task {
   space: string;
   tags: string[]; // tag record IDs
   recurring_job_id?: string; // linked recurring job (empty or absent if none)
+  updated: string; // ISO timestamp (used for Done-column date filtering)
 }
 
 type Board = Record<string, Task[]>;
@@ -379,6 +386,8 @@ interface KanbanBoardProps {
   columnRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
   cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
   onCardPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
+  showAllDone: boolean;
+  onToggleShowAllDone: () => void;
 }
 
 function KanbanBoard({
@@ -395,6 +404,8 @@ function KanbanBoard({
   columnRefs,
   cardRefs,
   onCardPointerDown,
+  showAllDone,
+  onToggleShowAllDone,
 }: KanbanBoardProps) {
   // ─── FLIP: animate cards that shift when the drop indicator moves ──
   const prevRectsRef = useRef<Record<string, { top: number; height: number }>>({});
@@ -445,7 +456,7 @@ function KanbanBoard({
             activeSpaceId === allSpacesId
               ? board[column]
               : board[column].filter((t) => t.space === activeSpaceId);
-          const tasks = query
+          let tasks = query
             ? spaceFiltered.filter((t) => {
                 if (t.title.toLowerCase().includes(query)) return true;
                 if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
@@ -455,6 +466,15 @@ function KanbanBoard({
                 });
               })
             : spaceFiltered;
+          // Apply 30-day filter to Done column unless showing all
+          if (column === "Done" && !showAllDone) {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 30);
+            tasks = tasks.filter((t) => {
+              const d = t.updated ? new Date(t.updated) : null;
+              return d ? d >= cutoff : false;
+            });
+          }
           const visibleTasks = tasks.filter((t) => t.id !== draggedTaskId);
           const isDropColumn = dropTarget?.column === column;
 
@@ -484,15 +504,27 @@ function KanbanBoard({
                     <h2 className="text-sm font-bold uppercase tracking-widest">
                       {column}
                     </h2>
-                    <span
-                      className="text-xs font-bold px-2 py-0.5 rounded-full"
-                      style={{
-                        background: "rgba(255, 255, 255, 0.1)",
-                        color: "#ffffff",
-                      }}
-                    >
-                      {tasks.length}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {column === "Done" && (
+                        <button
+                          onClick={onToggleShowAllDone}
+                          className="text-[10px] font-medium px-2 py-0.5 rounded-full cursor-pointer hover:bg-white/15 transition-colors"
+                          style={{ background: "rgba(255,255,255,0.08)" }}
+                          title={showAllDone ? "Show only last 30 days" : "Show all done tasks"}
+                        >
+                          {showAllDone ? "Last 30 days" : "Show all"}
+                        </button>
+                      )}
+                      <span
+                        className="text-xs font-bold px-2 py-0.5 rounded-full"
+                        style={{
+                          background: "rgba(255, 255, 255, 0.1)",
+                          color: "#ffffff",
+                        }}
+                      >
+                        {tasks.length}
+                      </span>
+                    </div>
                   </div>
                 </LiquidGlassWrap>
               </div>
@@ -798,6 +830,12 @@ export default function Home() {
   // Search / filter
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Done-column visibility toggle
+  const [showAllDone, setShowAllDone] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(SHOW_ALL_DONE_KEY) === "true";
+  });
+
   // ─── Redirect if not authenticated ─────────────
   useEffect(() => {
     if (!authLoading && !user) {
@@ -855,6 +893,7 @@ export default function Home() {
             space: task.space,
             tags: task.tags,
             recurring_job_id: task.recurring_job_id || undefined,
+            updated: task.updated,
           });
         }
       }
@@ -879,6 +918,12 @@ export default function Home() {
       localStorage.setItem(ACTIVE_SPACE_STORAGE_KEY, activeSpaceId);
     }
   }, [activeSpaceId, loading]);
+
+  // Persist Done-column visibility toggle
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(SHOW_ALL_DONE_KEY, String(showAllDone));
+  }, [showAllDone]);
 
   // Called when ManageSpacesModal mutates spaces
   const handleSpacesChanged = useCallback(
@@ -911,6 +956,7 @@ export default function Home() {
               description: task.description,
               space: task.space,
               tags: task.tags,
+              updated: task.updated,
             });
           }
         }
@@ -958,11 +1004,13 @@ export default function Home() {
   const tagMapRef = useRef(tagMap);
   const activeSpaceIdRef = useRef(activeSpaceId);
   const searchQueryRef = useRef(searchQuery);
+  const showAllDoneRef = useRef(showAllDone);
   boardRef.current = board;
   dropTargetRef.current = dropTarget;
   tagMapRef.current = tagMap;
   activeSpaceIdRef.current = activeSpaceId;
   searchQueryRef.current = searchQuery;
+  showAllDoneRef.current = showAllDone;
 
   // FLIP animation refs
   const animCardId = useRef<string | null>(null);
@@ -1138,7 +1186,7 @@ export default function Home() {
               spaceId === ALL_SPACES
                 ? boardRef.current[col]
                 : boardRef.current[col].filter((t) => t.space === spaceId);
-            const filtered = query
+            let filtered = query
               ? spaceTasks.filter((t) => {
                   if (t.title.toLowerCase().includes(query)) return true;
                 if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
@@ -1149,6 +1197,15 @@ export default function Home() {
                   });
                 })
               : spaceTasks;
+            // Apply 30-day filter to Done column unless showing all
+            if (col === "Done" && !showAllDoneRef.current) {
+              const cutoff = new Date();
+              cutoff.setDate(cutoff.getDate() - 30);
+              filtered = filtered.filter((t) => {
+                const d = t.updated ? new Date(t.updated) : null;
+                return d ? d >= cutoff : false;
+              });
+            }
             const colTasks = filtered.filter(
               (t) => t.id !== d.taskId
             );
@@ -1234,6 +1291,7 @@ export default function Home() {
 
         const d = dragRef.current;
         const dt = dropTargetRef.current;
+        dropSound?.play().catch(() => {});
         if (!d) return;
 
         const currentRect = d.el.getBoundingClientRect();
@@ -1296,6 +1354,15 @@ export default function Home() {
 
             const target = [...targetAll];
             target.splice(realIndex, 0, d.task);
+
+            // Update timestamp when task moves to a different column
+            if (dt.column !== d.sourceColumn) {
+              const movedIdx = target.findIndex((t) => t.id === d.taskId);
+              if (movedIdx !== -1) {
+                target[movedIdx] = { ...target[movedIdx], updated: new Date().toISOString() };
+              }
+            }
+
             next[dt.column] = target;
 
             reorderColumn(dt.column, target.map((t) => t.id)).catch((err) =>
@@ -1458,6 +1525,7 @@ export default function Home() {
             /* ignore */
           }
         }
+        pickSound?.play().catch(() => {});
         startDrag(el, task, column, pointerId, cx, cy);
       };
 
@@ -1679,6 +1747,7 @@ export default function Home() {
           space: modalSpaceId,
           tags: tagIds,
           recurring_job_id: task.recurring_job_id,
+          updated: new Date().toISOString(),
         };
 
         setBoard((prev) => ({
@@ -1720,6 +1789,7 @@ export default function Home() {
           space: pbTask.space,
           tags: pbTask.tags,
           recurring_job_id: recurringJobId,
+          updated: pbTask.updated,
         };
 
         setBoard((prev) => ({
@@ -2023,6 +2093,8 @@ export default function Home() {
           columnRefs={columnRefs}
           cardRefs={cardRefs}
           onCardPointerDown={handleCardPointerDown}
+          showAllDone={showAllDone}
+          onToggleShowAllDone={() => setShowAllDone((prev) => !prev)}
         />
       </div>
 

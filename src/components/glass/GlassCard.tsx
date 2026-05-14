@@ -104,6 +104,18 @@ export default function GlassCard({
   const id = useId().replace(/:/g, "");
   const filterId = `card-${id}`;
 
+  const pickSound = useRef<HTMLAudioElement | null>(null);
+  const dropSound = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      pickSound.current = new Audio("/sounds/cardpicksound.mp3");
+      pickSound.current.volume = 0.5;
+      dropSound.current = new Audio("/sounds/carddropsound.mp3");
+      dropSound.current.volume = 0.5;
+    }
+  }, []);
+
   // Measure card size and generate displacement maps
   useEffect(() => {
     if (!refractive || !cardRef.current) return;
@@ -244,6 +256,7 @@ export default function GlassCard({
       dragState.current = { isDragging: true, lastX: e.clientX, lastY: e.clientY };
       wrapperRef.current.setPointerCapture(e.pointerId);
       gsap.to(wrapperRef.current, { scale: 1.03, duration: 0.3, ease: "back.out(1.7)" });
+      pickSound.current?.play().catch(() => {});
     },
     [draggable]
   );
@@ -262,6 +275,7 @@ export default function GlassCard({
   const handlePointerUp = useCallback(() => {
     if (!dragState.current.isDragging || !wrapperRef.current) return;
     dragState.current.isDragging = false;
+    dropSound.current?.play().catch(() => {});
     gsap.to(wrapperRef.current, {
       scale: 1,
       duration: 0.5,
