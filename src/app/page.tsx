@@ -47,15 +47,11 @@ const ManageSpacesModal = dynamic(() => import("@/components/ManageSpacesModal")
 const BackgroundGalleryModal = dynamic(() => import("@/components/BackgroundGalleryModal"), { ssr: false });
 const TaskCommentsPanel = dynamic(() => import("@/components/TaskCommentsPanel"), { ssr: false });
 import RainOverlay from "@/components/RainOverlay";
+import { playPickSound, playDropSound } from "@/lib/sounds";
 
 const ALL_SPACES = "__all__";
 const ACTIVE_SPACE_STORAGE_KEY = "controlcentre.activeSpaceId";
 const SHOW_ALL_DONE_KEY = "controlcentre.showAllDone";
-
-const pickSound = typeof Audio !== "undefined" ? new Audio("/sounds/cardpicksound.mp3") : null;
-if (pickSound) pickSound.volume = 0.5;
-const dropSound = typeof Audio !== "undefined" ? new Audio("/sounds/carddropsound.mp3") : null;
-if (dropSound) dropSound.volume = 0.5;
 
 // ─── Types ──────────────────────────────────────────
 interface Task {
@@ -1291,7 +1287,7 @@ export default function Home() {
 
         const d = dragRef.current;
         const dt = dropTargetRef.current;
-        dropSound?.play().catch(() => {});
+        playDropSound();
         if (!d) return;
 
         const currentRect = d.el.getBoundingClientRect();
@@ -1525,7 +1521,7 @@ export default function Home() {
             /* ignore */
           }
         }
-        pickSound?.play().catch(() => {});
+        playPickSound();
         startDrag(el, task, column, pointerId, cx, cy);
       };
 
