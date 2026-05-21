@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, Fragment, useMemo, memo } from "react";
+import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { stripHtml } from "@/lib/html";
@@ -367,6 +367,59 @@ function SearchToggle({
   );
 }
 
+// ─── Kanban Card (memoized to avoid re-render on every board update) ──
+interface KanbanCardProps {
+  task: Task;
+  tagMap: Record<string, PBTag>;
+  spaceMap: Record<string, PBSpace>;
+  showSpacePill: boolean;
+  cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+  onPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
+  column: string;
+}
+
+const KanbanCard = memo(function KanbanCard({
+  task,
+  tagMap,
+  spaceMap,
+  showSpacePill,
+  cardRefs,
+  onPointerDown,
+  column,
+}: KanbanCardProps) {
+  return (
+    <div
+      ref={(el) => {
+        cardRefs.current[task.id] = el;
+      }}
+      onPointerDown={(e) => onPointerDown(e, task, column)}
+      style={{
+        cursor: "grab",
+        touchAction: "pan-x pan-y",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTouchCallout: "none",
+      }}
+    >
+      <LiquidGlassWrap
+        cornerRadius={16}
+        padding="14px 16px"
+        blurAmount={6}
+        overLight
+        elasticity={0.2}
+        shadowIntensity={0.8}
+      >
+        <TaskCardContent
+          task={task}
+          tagMap={tagMap}
+          spaceMap={spaceMap}
+          showSpacePill={showSpacePill}
+        />
+      </LiquidGlassWrap>
+    </div>
+  );
+});
+
 // ─── Kanban Board (extracted + memoized) ────────────
 interface KanbanBoardProps {
   loading: boolean;
@@ -403,38 +456,39 @@ function KanbanBoard({
   showAllDone,
   onToggleShowAllDone,
 }: KanbanBoardProps) {
-  // ─── FLIP: animate cards that shift when the drop indicator moves ──
-  const prevRectsRef = useRef<Record<string, { top: number; height: number }>>({});
-  useLayoutEffect(() => {
-    const newRects: Record<string, { top: number; height: number }> = {};
-    for (const [id, el] of Object.entries(cardRefs.current)) {
-      if (el && window.getComputedStyle(el).position !== "fixed") {
-        const r = el.getBoundingClientRect();
-        newRects[id] = { top: r.top, height: r.height };
+  // ─── Memoize filtered board so we don't re-filter on every render ──
+  const filteredBoard = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const result: Board = { Backlog: [], "To Do": [], "In Progress": [], Done: [] };
+    for (const col of COLUMNS) {
+      const spaceFiltered =
+        activeSpaceId === allSpacesId
+          ? board[col]
+          : board[col].filter((t) => t.space === activeSpaceId);
+      let tasks = query
+        ? spaceFiltered.filter((t) => {
+            if (t.title.toLowerCase().includes(query)) return true;
+            if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+            return t.tags.some((tagId) => {
+              const tag = tagMap[tagId];
+              return tag && tag.name.toLowerCase().includes(query);
+            });
+          })
+        : spaceFiltered;
+      if (col === "Done" && !showAllDone) {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 30);
+        tasks = tasks.filter((t) => {
+          const d = t.updated ? new Date(t.updated) : null;
+          return d ? d >= cutoff : false;
+        });
       }
+      result[col] = tasks;
     }
+    return result;
+  }, [board, searchQuery, activeSpaceId, allSpacesId, tagMap, showAllDone]);
 
-    const prev = prevRectsRef.current;
-    if (Object.keys(prev).length > 0) {
-      for (const [id, oldPos] of Object.entries(prev)) {
-        const newPos = newRects[id];
-        if (!newPos) continue;
-        const deltaY = oldPos.top - newPos.top;
-        if (Math.abs(deltaY) > 1 && Math.abs(deltaY) < 300) {
-          const el = cardRefs.current[id];
-          if (el) {
-            gsap.fromTo(
-              el,
-              { y: deltaY },
-              { y: 0, duration: 0.2, ease: "power2.out" }
-            );
-          }
-        }
-      }
-    }
-
-    prevRectsRef.current = newRects;
-  });
+  const showSpacePill = activeSpaceId === allSpacesId;
 
   return (
     <main ref={boardScrollRef} className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-x-auto overflow-y-hidden">
@@ -447,30 +501,7 @@ function KanbanBoard({
       )}
       <div className="flex gap-5 h-full" style={{ display: loading ? "none" : undefined }}>
         {COLUMNS.map((column) => {
-          const query = searchQuery.trim().toLowerCase();
-          const spaceFiltered =
-            activeSpaceId === allSpacesId
-              ? board[column]
-              : board[column].filter((t) => t.space === activeSpaceId);
-          let tasks = query
-            ? spaceFiltered.filter((t) => {
-                if (t.title.toLowerCase().includes(query)) return true;
-                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
-                return t.tags.some((tagId) => {
-                  const tag = tagMap[tagId];
-                  return tag && tag.name.toLowerCase().includes(query);
-                });
-              })
-            : spaceFiltered;
-          // Apply 30-day filter to Done column unless showing all
-          if (column === "Done" && !showAllDone) {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 30);
-            tasks = tasks.filter((t) => {
-              const d = t.updated ? new Date(t.updated) : null;
-              return d ? d >= cutoff : false;
-            });
-          }
+          const tasks = filteredBoard[column];
           const visibleTasks = tasks.filter((t) => t.id !== draggedTaskId);
           const isDropColumn = dropTarget?.column === column;
 
@@ -549,38 +580,15 @@ function KanbanBoard({
                             />
                           )}
 
-                        <div
-                          ref={(el) => {
-                            cardRefs.current[task.id] = el;
-                          }}
-                          onPointerDown={(e) =>
-                            onCardPointerDown(e, task, column)
-                          }
-                          className=""
-                          style={{
-                            cursor: "grab",
-                            touchAction: "pan-x pan-y",
-                            WebkitUserSelect: "none",
-                            userSelect: "none",
-                            WebkitTouchCallout: "none",
-                          }}
-                        >
-                          <LiquidGlassWrap
-                            cornerRadius={16}
-                            padding="14px 16px"
-                            blurAmount={6}
-                            overLight
-                            elasticity={0.2}
-                            shadowIntensity={0.8}
-                          >
-                            <TaskCardContent
-                              task={task}
-                              tagMap={tagMap}
-                              spaceMap={spaceMap}
-                              showSpacePill={activeSpaceId === allSpacesId}
-                            />
-                          </LiquidGlassWrap>
-                        </div>
+                        <KanbanCard
+                          task={task}
+                          tagMap={tagMap}
+                          spaceMap={spaceMap}
+                          showSpacePill={showSpacePill}
+                          cardRefs={cardRefs}
+                          onPointerDown={onCardPointerDown}
+                          column={column}
+                        />
                       </Fragment>
                     );
                   })}
@@ -1008,6 +1016,17 @@ export default function Home() {
   searchQueryRef.current = searchQuery;
   showAllDoneRef.current = showAllDone;
 
+  // Clean up cardRefs for deleted tasks so RainOverlay doesn't keep stale rects
+  useEffect(() => {
+    const allIds = new Set<string>();
+    for (const col of COLUMNS) {
+      for (const t of board[col]) allIds.add(t.id);
+    }
+    for (const id of Object.keys(cardRefs.current)) {
+      if (!allIds.has(id)) delete cardRefs.current[id];
+    }
+  }, [board]);
+
   // FLIP animation refs
   const animCardId = useRef<string | null>(null);
   const preDropRect = useRef<{ x: number; y: number } | null>(null);
@@ -1152,11 +1171,8 @@ export default function Home() {
         d.tiltX += (targetTiltX - d.tiltX) * SMOOTHING;
         d.prevX = ev.clientX;
         d.prevY = ev.clientY;
-        gsap.set(d.el, {
-          rotateX: d.tiltX,
-          rotateY: d.tiltY,
-          transformPerspective: 600,
-        });
+        // Direct style update avoids GSAP overhead on every pointermove frame
+        d.el.style.transform = `perspective(600px) rotateX(${d.tiltX}deg) rotateY(${d.tiltY}deg)`;
 
         // Find column under pointer (with horizontal tolerance for narrow viewports)
         let newDrop: { column: string; index: number } | null = null;
@@ -1571,13 +1587,17 @@ export default function Home() {
   );
 
   // ─── Column highlight on drag hover ─────────────
+  const prevDropColRef = useRef<string | null>(null);
   useEffect(() => {
-    for (const col of COLUMNS) {
-      const colEl = columnRefs.current[col];
-      if (!colEl) continue;
+    const activeCol = draggedTaskId ? dropTarget?.column ?? null : null;
+    const prevCol = prevDropColRef.current;
+    if (activeCol === prevCol) return; // nothing changed
 
-      if (draggedTaskId && dropTarget?.column === col) {
-        gsap.to(colEl, {
+    // Only animate the newly highlighted and previously highlighted columns
+    if (activeCol && activeCol !== prevCol) {
+      const el = columnRefs.current[activeCol];
+      if (el) {
+        gsap.to(el, {
           boxShadow:
             "inset 0 0 40px rgba(99, 102, 241, 0.12), 0 0 24px rgba(99, 102, 241, 0.08)",
           borderColor: "rgba(99, 102, 241, 0.45)",
@@ -1585,8 +1605,12 @@ export default function Home() {
           duration: 0.2,
           ease: "power2.out",
         });
-      } else {
-        gsap.to(colEl, {
+      }
+    }
+    if (prevCol && prevCol !== activeCol) {
+      const el = columnRefs.current[prevCol];
+      if (el) {
+        gsap.to(el, {
           boxShadow: "none",
           borderColor: "rgba(255, 255, 255, 0.06)",
           backgroundColor: "rgba(0, 0, 0, 0.1)",
@@ -1595,6 +1619,7 @@ export default function Home() {
         });
       }
     }
+    prevDropColRef.current = activeCol;
   }, [dropTarget, draggedTaskId]);
 
   // ─── Modal helpers ──────────────────────────────

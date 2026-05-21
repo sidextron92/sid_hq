@@ -151,8 +151,11 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Cap DPR to 1.5 to avoid massive canvas on Retina screens (2x/3x).
+    // Rain is a subtle overlay — beyond 1.5x there are diminishing returns.
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       canvas.style.width = `${window.innerWidth}px`;
@@ -184,12 +187,15 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
       const currentCfg = getConfig(configRef.current);
       ctx.clearRect(0, 0, currentW, currentH);
 
-      // Cache card rects: refresh every 3rd frame only while rain is active
+      // Cache card rects: refresh every 6th frame only while rain is active.
+      // Skip cards that are entirely below the viewport — rain only falls from above.
       let cardRects: DOMRect[] = [];
       if (activeRef.current) {
         frameCountRef.current++;
-        if (frameCountRef.current % 3 === 0 || rectCacheRef.current.length === 0) {
-          rectCacheRef.current = getCardRects();
+        if (frameCountRef.current % 6 === 0 || rectCacheRef.current.length === 0) {
+          const all = getCardRects();
+          const viewH = window.innerHeight;
+          rectCacheRef.current = all.filter((r) => r.top < viewH + 40 && r.bottom > -40);
         }
         cardRects = rectCacheRef.current;
       }
