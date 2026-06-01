@@ -54,26 +54,29 @@ export async function GET(request: NextRequest) {
     const tagsData = await tagsResp.json();
     const tags: PBRecord[] = tagsData.items || [];
 
-    // Build spaces dict: name -> id
-    const spacesDict: Record<string, string> = {};
+    // Build parallel arrays for spaces
+    const spaceNames: string[] = [];
+    const spaceIds: string[] = [];
     for (const s of spaces) {
-      spacesDict[s.name] = s.id;
+      spaceNames.push(s.name);
+      spaceIds.push(s.id);
     }
 
-    // Build tagsBySpace dict: spaceName -> { tagName -> tagId }
-    const tagsBySpace: Record<string, Record<string, string>> = {};
+    // Build tagsBySpace with parallel arrays per space
+    const tagsBySpace: Record<string, { names: string[]; ids: string[] }> = {};
     for (const s of spaces) {
-      tagsBySpace[s.name] = {};
+      tagsBySpace[s.name] = { names: [], ids: [] };
     }
     for (const t of tags) {
       const parent = spaces.find((s) => s.id === t.space);
       if (parent) {
-        tagsBySpace[parent.name][t.name] = t.id;
+        tagsBySpace[parent.name].names.push(t.name);
+        tagsBySpace[parent.name].ids.push(t.id);
       }
     }
 
     return NextResponse.json({
-      spaces: spacesDict,
+      spaces: { names: spaceNames, ids: spaceIds },
       tagsBySpace,
     });
   } catch (error) {
