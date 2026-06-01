@@ -9,8 +9,6 @@ const OWNER_ID = "gcyr41ajgbvsf2p";
 interface PBRecord {
   id: string;
   name: string;
-  color?: string;
-  is_default?: boolean;
   space?: string;
 }
 
@@ -40,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch spaces
     const spacesResp = await fetch(
-      `${PB_URL}/api/collections/spaces/records?filter=${encodeURIComponent(`owner = "${OWNER_ID}"`)}&sort=-is_default,name`,
+      `${PB_URL}/api/collections/spaces/records?filter=${encodeURIComponent(`owner = "${OWNER_ID}"`)}&sort=name`,
       { headers }
     );
     if (!spacesResp.ok) throw new Error("Failed to fetch spaces");
@@ -56,19 +54,26 @@ export async function GET(request: NextRequest) {
     const tagsData = await tagsResp.json();
     const tags: PBRecord[] = tagsData.items || [];
 
-    // Build tagsBySpace
-    const tagsBySpace: Record<string, { id: string; name: string }[]> = {};
-    for (const space of spaces) {
-      tagsBySpace[space.id] = [];
+    // Build spaces dict: name -> id
+    const spacesDict: Record<string, string> = {};
+    for (const s of spaces) {
+      spacesDict[s.name] = s.id;
     }
-    for (const tag of tags) {
-      if (tag.space && tagsBySpace[tag.space]) {
-        tagsBySpace[tag.space].push({ id: tag.id, name: tag.name });
+
+    // Build tagsBySpace dict: spaceName -> { tagName -> tagId }
+    const tagsBySpace: Record<string, Record<string, string>> = {};
+    for (const s of spaces) {
+      tagsBySpace[s.name] = {};
+    }
+    for (const t of tags) {
+      const parent = spaces.find((s) => s.id === t.space);
+      if (parent) {
+        tagsBySpace[parent.name][t.name] = t.id;
       }
     }
 
     return NextResponse.json({
-      spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
+      spaces: spacesDict,
       tagsBySpace,
     });
   } catch (error) {
