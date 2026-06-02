@@ -26,6 +26,27 @@ if (!PB_URL || !ADMIN_EMAIL || !ADMIN_PASSWORD) {
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
+// Retry helper for transient network failures
+async function withRetry(fn, retries = 3, delayMs = 2000) {
+  let lastErr;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isNetworkError =
+        err.status === 0 ||
+        (err.originalError && err.originalError.code === "ETIMEDOUT") ||
+        (err.message && /fetch failed|timeout|ETIMEDOUT|ECONNREFUSED/i.test(err.message));
+      if (!isNetworkError || i === retries - 1) throw err;
+      const wait = delayMs * (i + 1);
+      console.warn(`  ⚠️ Network error (attempt ${i + 1}/${retries}), retrying in ${wait}ms…`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
 const MONTHS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -50,18 +71,22 @@ function todayDateString(now) {
 }
 
 async function main() {
-  // Authenticate as admin
-  await pb.collection("_superusers").authWithPassword(ADMIN_EMAIL, ADMIN_PASSWORD);
+  // Authenticate as admin (with retries for transient network errors)
+  await withRetry(() =>
+    pb.collection("_superusers").authWithPassword(ADMIN_EMAIL, ADMIN_PASSWORD)
+  );
 
   const now = new Date();
   const todayStr = todayDateString(now);
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
   const dayOfMonth = now.getDate(); // 1-31
 
-  // Fetch all active, non-deleted recurring jobs
-  const jobs = await pb.collection("recurring_jobs").getFullList({
-    filter: `is_active = true && is_deleted = false`,
-  });
+  // Fetch all active, non-deleted recurring jobs (with retries)
+  const jobs = await withRetry(() =>
+    pb.collection("recurring_jobs").getFullList({
+      filter: `is_active = true && is_deleted = false`,
+    })
+  );
 
   console.log(`[${todayStr}] Found ${jobs.length} active recurring job(s)`);
 
@@ -89,8 +114,10 @@ async function main() {
     if (!shouldExecute) continue;
 
     try {
-      // Fetch the template task
-      const template = await pb.collection("tasks").getOne(job.template_task_id);
+      // Fetch the template task (with retries)
+      const template = await withRetry(() =>
+        pb.collection("tasks").getOne(job.template_task_id)
+      );
 
       if (template.is_deleted) {
         console.log(`  Skipping job ${job.id}: template task ${job.template_task_id} is deleted`);
@@ -101,32 +128,38 @@ async function main() {
       const prefix = formatTitlePrefix(job.period, now);
       const newTitle = `${prefix} - ${template.title}`;
 
-      // Count existing tasks in backlog for sort_order
-      const backlogList = await pb.collection("tasks").getList(1, 1, {
-        filter: `owner = "${job.owner}" && space = "${template.space}" && status = "backlog" && is_deleted = false`,
-        sort: "-sort_order",
-      });
+      // Count existing tasks in backlog for sort_order (with retries)
+      const backlogList = await withRetry(() =>
+        pb.collection("tasks").getList(1, 1, {
+          filter: `owner = "${job.owner}" && space = "${template.space}" && status = "backlog" && is_deleted = false`,
+          sort: "-sort_order",
+        })
+      );
       const nextSortOrder = backlogList.totalItems > 0
         ? (backlogList.items[0]?.sort_order ?? 0) + 1
         : 1;
 
-      // Create the new task
-      await pb.collection("tasks").create({
-        title: newTitle,
-        description: template.description || "",
-        status: "backlog",
-        tags: template.tags || [],
-        space: template.space,
-        sort_order: nextSortOrder,
-        owner: job.owner,
-        recurring_job_id: job.id,
-        is_deleted: false,
-      });
+      // Create the new task (with retries)
+      await withRetry(() =>
+        pb.collection("tasks").create({
+          title: newTitle,
+          description: template.description || "",
+          status: "backlog",
+          tags: template.tags || [],
+          space: template.space,
+          sort_order: nextSortOrder,
+          owner: job.owner,
+          recurring_job_id: job.id,
+          is_deleted: false,
+        })
+      );
 
-      // Update the job's last_executed_at
-      await pb.collection("recurring_jobs").update(job.id, {
-        last_executed_at: todayStr,
-      });
+      // Update the job's last_executed_at (with retries)
+      await withRetry(() =>
+        pb.collection("recurring_jobs").update(job.id, {
+          last_executed_at: todayStr,
+        })
+      );
 
       executed++;
       console.log(`  ✅ Created task: "${newTitle}" (job ${job.id})`);
