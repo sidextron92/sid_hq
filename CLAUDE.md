@@ -51,9 +51,11 @@ npm run lint       # ESLint
 - Tasks have optional `recurring_job_id` (relation→recurring_jobs) linking child tasks back to their recurring job
 - One record per recurring task (no duplication); `last_executed_at` prevents double-execution
 - `days` field: monthly `[1,15]`, weekly `[0-6]` (Sun=0), daily `null`
-- Cron script: `scripts/cron-recurring.mjs` — runs daily, creates task copies with date-prefixed titles
-  - Monthly: `[Apr'26] - Task title`, Weekly/Daily: `[16-Apr-2026] - Task title`
-  - Requires env: `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`
+- Recurring tasks are handled by the PocketBase cron hook: `pb_hooks/recurring_tasks_cron.pb.js`
+  - Runs entirely inside PocketBase, no external scheduler or env vars needed
+  - Copy to the PocketBase server's `pb_hooks/` directory and restart PocketBase
+  - Creates task copies with date-prefixed titles: Monthly `[Apr'26] - Task title`, Weekly/Daily `[16-Apr-2026] - Task title`
+- Legacy Node cron script: `scripts/cron-recurring.mjs` — kept for local/manual use; requires `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`
 - CRUD functions in `src/lib/pocketbase.ts`: `createRecurringJob`, `updateRecurringJob`, `deleteRecurringJob`, `fetchRecurringJobForTask`, `fetchRecurringJobById`
 
 ### Environment
