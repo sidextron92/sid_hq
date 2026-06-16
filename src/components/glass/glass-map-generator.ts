@@ -140,14 +140,12 @@ function calculateDisplacementMap2D(
  * @param objectW Object width
  * @param objectH Object height
  * @param radius  Corner radius
- * @param bezelWidth Width of the specular ring
  * @returns ImageData with white specular highlights
  */
 function calculateSpecularHighlight(
   objectW: number,
   objectH: number,
-  radius: number,
-  bezelWidth: number
+  radius: number
 ): ImageData {
   const img = new ImageData(objectW, objectH);
 
@@ -258,7 +256,7 @@ export function generateGlassMaps(config: GlassMapConfig): GlassMapResult {
   const displacementImg = calculateDisplacementMap2D(
     width, height, width, height, radius, bezelWidth, maxDisp || 1, profile
   );
-  const specularImg = calculateSpecularHighlight(width, height, radius, bezelWidth);
+  const specularImg = calculateSpecularHighlight(width, height, radius);
 
   return {
     displacementMap: imageDataToDataURL(displacementImg),

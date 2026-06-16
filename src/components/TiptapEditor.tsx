@@ -284,8 +284,11 @@ export default function TiptapEditor({
   onChange: (html: string) => void;
 }) {
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
   const [inTable, setInTable] = useState(false);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   const editor = useEditor({
     immediatelyRender: false,

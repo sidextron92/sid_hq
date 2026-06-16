@@ -25,8 +25,11 @@ export default function BackgroundGalleryModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoading(true);
-    fetchBackgrounds()
+    Promise.resolve()
+      .then(() => {
+        if (!cancelled) setLoading(true);
+        return fetchBackgrounds();
+      })
       .then((bgs) => {
         if (!cancelled) setBackgrounds(bgs);
       })
@@ -123,7 +126,7 @@ export default function BackgroundGalleryModal({
               <div className="relative aspect-video">
                 <video
                   className="w-full h-full object-cover"
-                  src="/background.mp4"
+                  src="/background.webm"
                   muted
                   playsInline
                   autoPlay

@@ -24,14 +24,11 @@ export default function DragDock({
   className = "",
   direction = "horizontal",
 }: DragDockProps) {
-  const [active, setActive] = useState(activeId || items[0]?.id);
+  const [internalActive, setInternalActive] = useState(activeId || items[0]?.id);
+  const active = activeId || internalActive;
   const indicatorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-
-  useEffect(() => {
-    if (activeId) setActive(activeId);
-  }, [activeId]);
 
   useEffect(() => {
     if (!indicatorRef.current || !containerRef.current) return;
@@ -67,7 +64,7 @@ export default function DragDock({
 
   const handleSelect = useCallback(
     (id: string) => {
-      setActive(id);
+      setInternalActive(id);
       onSelect?.(id);
     },
     [onSelect]

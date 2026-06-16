@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useCallback, useSyncExternalStore } from "react";
 import pb from "@/lib/pocketbase";
 import type { RecordModel } from "pocketbase";
 
@@ -20,36 +20,69 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+type AuthSnapshot = { user: AuthUser | null; loading: boolean };
+const serverAuthSnapshot: AuthSnapshot = { user: null, loading: true };
+let authSnapshot: AuthSnapshot = serverAuthSnapshot;
+const authListeners = new Set<() => void>();
+
+function getAuthStoreUser(): AuthUser | null {
+  if (!pb.authStore.isValid || !pb.authStore.record) return null;
+  const record = pb.authStore.record as RecordModel;
+  return { id: record.id, email: record.email, name: record.name };
+}
+
+function setAuthSnapshot(next: AuthSnapshot) {
+  authSnapshot = next;
+  for (const listener of authListeners) listener();
+}
+
+function readAuthStoreSnapshot(): AuthSnapshot {
+  return { user: getAuthStoreUser(), loading: false };
+}
+
+function subscribeAuthStore(listener: () => void) {
+  let active = true;
+  authListeners.add(listener);
+
+  queueMicrotask(() => {
+    if (active) setAuthSnapshot(readAuthStoreSnapshot());
+  });
+
+  const unsub = pb.authStore.onChange((_token, record) => {
+    if (record) {
+      const r = record as RecordModel;
+      setAuthSnapshot({ user: { id: r.id, email: r.email, name: r.name }, loading: false });
+    } else {
+      setAuthSnapshot({ user: null, loading: false });
+    }
+  });
+
+  return () => {
+    active = false;
+    authListeners.delete(listener);
+    unsub();
+  };
+}
+
+function getAuthSnapshot() {
+  return authSnapshot;
+}
+
+function getServerAuthSnapshot() {
+  return serverAuthSnapshot;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Hydrate from PocketBase authStore on mount
-  useEffect(() => {
-    if (pb.authStore.isValid && pb.authStore.record) {
-      const record = pb.authStore.record as RecordModel;
-      setUser({ id: record.id, email: record.email, name: record.name });
-    }
-    setLoading(false);
-
-    // Listen for auth state changes
-    const unsub = pb.authStore.onChange((_token, record) => {
-      if (record) {
-        const r = record as RecordModel;
-        setUser({ id: r.id, email: r.email, name: r.name });
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => unsub();
-  }, []);
+  const { user, loading } = useSyncExternalStore(
+    subscribeAuthStore,
+    getAuthSnapshot,
+    getServerAuthSnapshot
+  );
 
   const login = useCallback(async (email: string, password: string) => {
     const result = await pb.collection("users").authWithPassword(email, password);
     const r = result.record as RecordModel;
-    setUser({ id: r.id, email: r.email, name: r.name });
+    setAuthSnapshot({ user: { id: r.id, email: r.email, name: r.name }, loading: false });
   }, []);
 
   // Signup: create account + send OTP for verification. Returns otpId.
@@ -69,12 +102,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifySignupOtp = useCallback(async (otpId: string, code: string) => {
     const result = await pb.collection("users").authWithOTP(otpId, code);
     const r = result.record as RecordModel;
-    setUser({ id: r.id, email: r.email, name: r.name });
+    setAuthSnapshot({ user: { id: r.id, email: r.email, name: r.name }, loading: false });
   }, []);
 
   const logout = useCallback(() => {
     pb.authStore.clear();
-    setUser(null);
+    setAuthSnapshot({ user: null, loading: false });
   }, []);
 
   return (

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef, useCallback, useEffect, useState, useId } from "react";
+import React, { useRef, useCallback, useEffect, useState, useId, useMemo } from "react";
 import LiquidGlassWrap from "./LiquidGlassWrap";
-import { generateGlassMaps, type GlassMapResult } from "./glass-map-generator";
+import { generateGlassMaps } from "./glass-map-generator";
 import gsap from "gsap";
 import { playPickSound, playDropSound } from "@/lib/sounds";
 
@@ -99,7 +99,6 @@ export default function GlassCard({
   const borderScreenRef = useRef<HTMLSpanElement>(null);
   const borderOverlayRef = useRef<HTMLSpanElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [maps, setMaps] = useState<GlassMapResult | null>(null);
   const dragState = useRef({ isDragging: false, lastX: 0, lastY: 0 });
 
   const id = useId().replace(/:/g, "");
@@ -121,19 +120,16 @@ export default function GlassCard({
     return () => ro.disconnect();
   }, [refractive]);
 
-  // Generate physics-based maps when size is known
-  useEffect(() => {
-    if (!refractive || size.w === 0 || size.h === 0) return;
-    setMaps(
-      generateGlassMaps({
-        width: size.w,
-        height: size.h,
-        radius: cornerRadius,
-        bezelWidth: Math.min(24, cornerRadius),
-        glassThickness: 100,
-        refractiveIndex: 1.45,
-      })
-    );
+  const maps = useMemo(() => {
+    if (!refractive || size.w === 0 || size.h === 0) return null;
+    return generateGlassMaps({
+      width: size.w,
+      height: size.h,
+      radius: cornerRadius,
+      bezelWidth: Math.min(24, cornerRadius),
+      glassThickness: 100,
+      refractiveIndex: 1.45,
+    });
   }, [refractive, size.w, size.h, cornerRadius]);
 
   // DOM capture: clone the captureRef element's subtree into cloneInnerRef.

@@ -95,8 +95,13 @@ export default function RainOverlay({ active, config, cardRefs }: RainOverlayPro
   const rectCacheRef = useRef<DOMRect[]>([]);
   const frameCountRef = useRef(0);
 
-  activeRef.current = active;
-  configRef.current = config;
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   // Get all card bounding rects (cached per frame)
   const getCardRects = useCallback(() => {

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef, useCallback, useEffect, useState, useId } from "react";
+import React, { useRef, useCallback, useEffect, useState, useId, useMemo } from "react";
 import LiquidGlassWrap from "./LiquidGlassWrap";
-import { generateGlassMaps, type GlassMapResult } from "./glass-map-generator";
+import { generateGlassMaps } from "./glass-map-generator";
 import gsap from "gsap";
 
 interface GlassButtonProps {
@@ -54,7 +54,6 @@ export default function GlassButton({
   const filterId = `button-${id}`;
 
   const [btnSize, setBtnSize] = useState({ w: 0, h: 0 });
-  const [maps, setMaps] = useState<GlassMapResult | null>(null);
 
   // Measure the button element — maps need exact dimensions
   useEffect(() => {
@@ -72,19 +71,16 @@ export default function GlassButton({
     return () => ro.disconnect();
   }, [refractive]);
 
-  // Generate physics-based displacement + specular maps
-  useEffect(() => {
-    if (!refractive || btnSize.w === 0 || btnSize.h === 0) return;
-    setMaps(
-      generateGlassMaps({
-        width: btnSize.w,
-        height: btnSize.h,
-        radius: Math.min(CORNER_RADIUS, btnSize.h / 2),
-        bezelWidth: Math.min(16, btnSize.h / 2),
-        glassThickness: 80,
-        refractiveIndex: 1.45,
-      })
-    );
+  const maps = useMemo(() => {
+    if (!refractive || btnSize.w === 0 || btnSize.h === 0) return null;
+    return generateGlassMaps({
+      width: btnSize.w,
+      height: btnSize.h,
+      radius: Math.min(CORNER_RADIUS, btnSize.h / 2),
+      bezelWidth: Math.min(16, btnSize.h / 2),
+      glassThickness: 80,
+      refractiveIndex: 1.45,
+    });
   }, [refractive, btnSize.w, btnSize.h]);
 
   // DOM capture: clone captureRef's subtree into cloneInnerRef.

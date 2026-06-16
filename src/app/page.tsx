@@ -374,7 +374,7 @@ interface KanbanCardProps {
   tagMap: Record<string, PBTag>;
   spaceMap: Record<string, PBSpace>;
   showSpacePill: boolean;
-  cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+  onCardRef: (taskId: string, el: HTMLDivElement | null) => void;
   onPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
   column: string;
 }
@@ -384,14 +384,14 @@ const KanbanCard = memo(function KanbanCard({
   tagMap,
   spaceMap,
   showSpacePill,
-  cardRefs,
+  onCardRef,
   onPointerDown,
   column,
 }: KanbanCardProps) {
   return (
     <div
       ref={(el) => {
-        cardRefs.current[task.id] = el;
+        onCardRef(task.id, el);
       }}
       onPointerDown={(e) => onPointerDown(e, task, column)}
       style={{
@@ -434,7 +434,7 @@ interface KanbanBoardProps {
   spaceMap: Record<string, PBSpace>;
   boardScrollRef: React.RefObject<HTMLElement | null>;
   columnRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
-  cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+  onCardRef: (taskId: string, el: HTMLDivElement | null) => void;
   onCardPointerDown: (e: React.PointerEvent, task: Task, column: string) => void;
   showAllDone: boolean;
   onToggleShowAllDone: () => void;
@@ -452,7 +452,7 @@ function KanbanBoard({
   spaceMap,
   boardScrollRef,
   columnRefs,
-  cardRefs,
+  onCardRef,
   onCardPointerDown,
   showAllDone,
   onToggleShowAllDone,
@@ -586,7 +586,7 @@ function KanbanBoard({
                           tagMap={tagMap}
                           spaceMap={spaceMap}
                           showSpacePill={showSpacePill}
-                          cardRefs={cardRefs}
+                          onCardRef={onCardRef}
                           onPointerDown={onCardPointerDown}
                           column={column}
                         />
@@ -1415,6 +1415,10 @@ export default function Home() {
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const boardScrollRef = useRef<HTMLElement | null>(null);
+
+  const handleCardRef = useCallback((taskId: string, el: HTMLDivElement | null) => {
+    cardRefs.current[taskId] = el;
+  }, []);
 
   // Mutable drag state (avoids re-renders on every pixel)
   const dragRef = useRef<{
@@ -2374,7 +2378,7 @@ export default function Home() {
         ) : (
           <video
             className="absolute inset-0 z-0 w-full h-full object-cover"
-            src="/background.mp4"
+            src="/background.webm"
             autoPlay
             loop
             muted
@@ -2412,7 +2416,7 @@ export default function Home() {
           spaceMap={spaceMap}
           boardScrollRef={boardScrollRef}
           columnRefs={columnRefs}
-          cardRefs={cardRefs}
+          onCardRef={handleCardRef}
           onCardPointerDown={handleCardPointerDown}
           showAllDone={showAllDone}
           onToggleShowAllDone={handleToggleShowAllDone}

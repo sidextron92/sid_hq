@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useCallback } from "react";
 
 interface LiquidGlassWrapProps {
   children: React.ReactNode;
@@ -46,30 +46,55 @@ export default function LiquidGlassWrap({
   onClick,
 }: LiquidGlassWrapProps) {
   const glassRef = useRef<HTMLDivElement>(null);
-  const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
-  const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 });
-  const [isHovered, setIsHovered] = useState(false);
-  const [elasticTransform, setElasticTransform] = useState({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
+  const glowRef = useRef<HTMLSpanElement>(null);
+  const borderScreenRef = useRef<HTMLSpanElement>(null);
+  const borderOverlayRef = useRef<HTMLSpanElement>(null);
 
-  // RAF-batch frequent mouse updates so a card never triggers more than one React render per frame
   const rafRef = useRef<number | null>(null);
   const pendingRef = useRef<{
-    mouseOffset: { x: number; y: number };
-    mousePos: { x: number; y: number };
-    elasticTransform: { x: number; y: number; scaleX: number; scaleY: number } | null;
+    offX: number;
+    offY: number;
+    mouseX: number;
+    mouseY: number;
+    transform: string;
   } | null>(null);
+
+  const applyGlassStyles = useCallback((offX: number, offY: number, mouseX: number, mouseY: number, transform: string) => {
+    const glow = glowRef.current;
+    if (glow) {
+      glow.style.background = `radial-gradient(circle at ${mouseX * 100}% ${mouseY * 100}%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)`;
+    }
+
+    const gradAngle = 135 + offX * 1.2;
+    const gradStop1 = Math.max(10, 33 + offY * 0.3);
+    const gradStop2 = Math.min(90, 66 + offY * 0.4);
+    const screenAlpha1 = 0.12 + Math.abs(offX) * 0.008;
+    const screenAlpha2 = 0.4 + Math.abs(offX) * 0.012;
+    const overlayAlpha1 = 0.32 + Math.abs(offX) * 0.008;
+    const overlayAlpha2 = 0.6 + Math.abs(offX) * 0.012;
+
+    const screen = borderScreenRef.current;
+    if (screen) {
+      screen.style.background = `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${screenAlpha1}) ${gradStop1}%, rgba(255,255,255,${screenAlpha2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`;
+    }
+
+    const overlay = borderOverlayRef.current;
+    if (overlay) {
+      overlay.style.background = `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${overlayAlpha1}) ${gradStop1}%, rgba(255,255,255,${overlayAlpha2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`;
+    }
+
+    if (glassRef.current && elasticity > 0) {
+      glassRef.current.style.transform = transform;
+    }
+  }, [elasticity]);
 
   const flushMouseUpdates = useCallback(() => {
     rafRef.current = null;
     const p = pendingRef.current;
     if (!p) return;
     pendingRef.current = null;
-    setMouseOffset(p.mouseOffset);
-    setMousePos(p.mousePos);
-    if (p.elasticTransform) {
-      setElasticTransform(p.elasticTransform);
-    }
-  }, []);
+    applyGlassStyles(p.offX, p.offY, p.mouseX, p.mouseY, p.transform);
+  }, [applyGlassStyles]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -80,13 +105,10 @@ export default function LiquidGlassWrap({
       const offX = ((e.clientX - cx) / rect.width) * 100;
       const offY = ((e.clientY - cy) / rect.height) * 100;
 
-      const nextMouseOffset = { x: offX, y: offY };
-      const nextMousePos = {
-        x: (e.clientX - rect.left) / rect.width,
-        y: (e.clientY - rect.top) / rect.height,
-      };
+      const mouseX = (e.clientX - rect.left) / rect.width;
+      const mouseY = (e.clientY - rect.top) / rect.height;
 
-      let nextElastic: typeof elasticTransform | null = null;
+      let transform = "translate(0px, 0px) scaleX(1) scaleY(1)";
       if (elasticity > 0) {
         const deltaX = e.clientX - cx;
         const deltaY = e.clientY - cy;
@@ -105,21 +127,16 @@ export default function LiquidGlassWrap({
           const stretch = Math.min(dist / 300, 1) * elasticity * fade;
           const sx = 1 + normX * stretch * 0.3 - normY * stretch * 0.15;
           const sy = 1 + normY * stretch * 0.3 - normX * stretch * 0.15;
-          nextElastic = {
-            x: tx,
-            y: ty,
-            scaleX: Math.max(0.85, sx),
-            scaleY: Math.max(0.85, sy),
-          };
-        } else {
-          nextElastic = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+          transform = `translate(${tx}px, ${ty}px) scaleX(${Math.max(0.85, sx)}) scaleY(${Math.max(0.85, sy)})`;
         }
       }
 
       pendingRef.current = {
-        mouseOffset: nextMouseOffset,
-        mousePos: nextMousePos,
-        elasticTransform: nextElastic,
+        offX,
+        offY,
+        mouseX,
+        mouseY,
+        transform,
       };
 
       if (rafRef.current === null) {
@@ -130,31 +147,18 @@ export default function LiquidGlassWrap({
   );
 
   const handleMouseEnter = useCallback(() => {
-    setIsHovered(true);
+    if (glowRef.current) glowRef.current.style.opacity = "1";
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setIsHovered(false);
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
     pendingRef.current = null;
-    setMouseOffset({ x: 0, y: 0 });
-    setMousePos({ x: 0.5, y: 0.5 });
-    if (elasticity > 0) {
-      setElasticTransform({ x: 0, y: 0, scaleX: 1, scaleY: 1 });
-    }
-  }, [elasticity]);
-
-  // Border shine gradient — rotates with mouse
-  const gradAngle = 135 + mouseOffset.x * 1.2;
-  const gradStop1 = Math.max(10, 33 + mouseOffset.y * 0.3);
-  const gradStop2 = Math.min(90, 66 + mouseOffset.y * 0.4);
-  const screenAlpha1 = 0.12 + Math.abs(mouseOffset.x) * 0.008;
-  const screenAlpha2 = 0.4 + Math.abs(mouseOffset.x) * 0.012;
-  const overlayAlpha1 = 0.32 + Math.abs(mouseOffset.x) * 0.008;
-  const overlayAlpha2 = 0.6 + Math.abs(mouseOffset.x) * 0.012;
+    if (glowRef.current) glowRef.current.style.opacity = "0";
+    applyGlassStyles(0, 0, 0.5, 0.5, "translate(0px, 0px) scaleX(1) scaleY(1)");
+  }, [applyGlassStyles]);
 
   // Shadow
   const shadowAlpha = 0.25 * shadowIntensity;
@@ -163,15 +167,6 @@ export default function LiquidGlassWrap({
   const shadow = shadowIntensity > 0
     ? `0px ${shadowY}px ${shadowBlur}px rgba(0, 0, 0, ${shadowAlpha})`
     : "none";
-
-  // Elasticity transform
-  const elasticStyle =
-    elasticity > 0
-      ? {
-          transform: `translate(${elasticTransform.x}px, ${elasticTransform.y}px) scaleX(${elasticTransform.scaleX}) scaleY(${elasticTransform.scaleY})`,
-          transition: "transform 0.2s ease-out",
-        }
-      : {};
 
   return (
     <div
@@ -182,7 +177,9 @@ export default function LiquidGlassWrap({
         boxShadow: shadow,
         backdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
         WebkitBackdropFilter: `blur(${blurAmount}px) saturate(${saturation}%)`,
-        ...elasticStyle,
+        ...(elasticity > 0
+          ? { transform: "translate(0px, 0px) scaleX(1) scaleY(1)", transition: "transform 0.2s ease-out" }
+          : {}),
         ...style,
       }}
       onMouseEnter={handleMouseEnter}
@@ -200,10 +197,11 @@ export default function LiquidGlassWrap({
 
       {/* Layer 2: Hover highlight — radial glow that follows cursor */}
       <span
+        ref={glowRef}
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
-          background: `radial-gradient(circle at ${mousePos.x * 100}% ${mousePos.y * 100}%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)`,
-          opacity: isHovered ? 1 : 0,
+          background: "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 40%, transparent 70%)",
+          opacity: 0,
           transition: "opacity 0.2s ease-out",
           mixBlendMode: "overlay",
         }}
@@ -225,6 +223,7 @@ export default function LiquidGlassWrap({
 
       {/* Layer 4: Border shine (screen) */}
       <span
+        ref={borderScreenRef}
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
           mixBlendMode: "screen",
@@ -234,12 +233,13 @@ export default function LiquidGlassWrap({
           WebkitMaskComposite: "xor",
           maskComposite: "exclude",
           boxShadow: "0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(255,255,255,0.25) inset, 0 1px 4px rgba(0,0,0,0.35)",
-          background: `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${screenAlpha1}) ${gradStop1}%, rgba(255,255,255,${screenAlpha2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`,
+          background: "linear-gradient(135deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.12) 33%, rgba(255,255,255,0.4) 66%, rgba(255,255,255,0) 100%)",
         }}
       />
 
       {/* Layer 5: Border shine (overlay) */}
       <span
+        ref={borderOverlayRef}
         className="absolute inset-0 rounded-[inherit] pointer-events-none"
         style={{
           mixBlendMode: "overlay",
@@ -249,7 +249,7 @@ export default function LiquidGlassWrap({
           WebkitMaskComposite: "xor",
           maskComposite: "exclude",
           boxShadow: "0 0 0 0.5px rgba(255,255,255,0.5) inset, 0 1px 3px rgba(255,255,255,0.25) inset, 0 1px 4px rgba(0,0,0,0.35)",
-          background: `linear-gradient(${gradAngle}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${overlayAlpha1}) ${gradStop1}%, rgba(255,255,255,${overlayAlpha2}) ${gradStop2}%, rgba(255,255,255,0) 100%)`,
+          background: "linear-gradient(135deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.32) 33%, rgba(255,255,255,0.6) 66%, rgba(255,255,255,0) 100%)",
         }}
       />
 

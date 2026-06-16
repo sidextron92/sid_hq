@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-globals */
 importScripts(
   "https://storage.googleapis.com/workbox-cdn/releases/7.3.0/workbox-sw.js"
 );
@@ -13,7 +12,7 @@ const { RangeRequestsPlugin } = workbox.rangeRequests;
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) =>
   e.waitUntil(
-    // Delete the old local-media cache (previously held background.mp4).
+    // Delete the old local-media cache (previously held background video).
     // We no longer cache that file through the SW — stale entries would
     // cause the video to be served from cache as a full 200 response
     // when the browser expects a 206 range response, breaking playback.
@@ -46,7 +45,7 @@ registerRoute(
   })
 );
 
-// ── 3. background.mp4 — pass through to network (no SW caching)
+// ── 3. background video — pass through to network (no SW caching)
 // Browsers stream video via HTTP range requests (206 responses). Caching
 // these through a Cache-First strategy requires a full 200 in cache first,
 // which never happens when the server only ever returns 206. Let the browser
