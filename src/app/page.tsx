@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { stripHtml } from "@/lib/html";
+import { fastStripHtml } from "@/lib/html";
 import {
   LiquidGlassWrap,
   GlassButton,
@@ -46,7 +46,7 @@ const TiptapEditor = dynamic(() => import("@/components/TiptapEditor"), { ssr: f
 const ManageSpacesModal = dynamic(() => import("@/components/ManageSpacesModal"), { ssr: false });
 const BackgroundGalleryModal = dynamic(() => import("@/components/BackgroundGalleryModal"), { ssr: false });
 const TaskCommentsPanel = dynamic(() => import("@/components/TaskCommentsPanel"), { ssr: false });
-import RainOverlay from "@/components/RainOverlay";
+const RainOverlay = dynamic(() => import("@/components/RainOverlay"), { ssr: false });
 import { playPickSound, playDropSound } from "@/lib/sounds";
 
 const ALL_SPACES = "__all__";
@@ -137,7 +137,7 @@ const TaskCardContent = memo(function TaskCardContent({
             WebkitBoxOrient: "vertical",
           }}
         >
-          {stripHtml(task.description)}
+          {fastStripHtml(task.description)}
         </div>
       )}
       {task.tags.length > 0 && (
@@ -468,7 +468,7 @@ function KanbanBoard({
       let tasks = query
         ? spaceFiltered.filter((t) => {
             if (t.title.toLowerCase().includes(query)) return true;
-            if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+            if (t.description && fastStripHtml(t.description).toLowerCase().includes(query)) return true;
             return t.tags.some((tagId) => {
               const tag = tagMap[tagId];
               return tag && tag.name.toLowerCase().includes(query);
@@ -635,6 +635,7 @@ export default function Home() {
   const [editingTask, setEditingTask] = useState<{ task: Task; column: string } | "new" | null>(null);
   const [modalTitle, setModalTitle] = useState("");
   const [modalDescription, setModalDescription] = useState("");
+  const modalDescriptionRef = useRef("");
   const [modalSpaceId, setModalSpaceId] = useState<string>("");
   const [modalTagInput, setModalTagInput] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]); // tag names
@@ -1201,7 +1202,7 @@ export default function Home() {
             let filtered = query
               ? spaceTasks.filter((t) => {
                   if (t.title.toLowerCase().includes(query)) return true;
-                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+                if (t.description && fastStripHtml(t.description).toLowerCase().includes(query)) return true;
                   const tm = tagMapRef.current;
                   return t.tags.some((tagId) => {
                     const tag = tm[tagId];
@@ -1346,7 +1347,7 @@ export default function Home() {
               if (spaceId !== ALL_SPACES && t.space !== spaceId) return false;
               if (query) {
                 if (t.title.toLowerCase().includes(query)) return true;
-                if (t.description && stripHtml(t.description).toLowerCase().includes(query)) return true;
+                if (t.description && fastStripHtml(t.description).toLowerCase().includes(query)) return true;
                 const tm = tagMapRef.current;
                 return t.tags.some((tagId) => {
                   const tag = tm[tagId];
@@ -1466,7 +1467,9 @@ export default function Home() {
   const openEditModalForTask = useCallback(
     async (task: Task, column: string) => {
       setModalTitle(task.title);
-      setModalDescription(task.description || "");
+      const description = task.description || "";
+      modalDescriptionRef.current = description;
+      setModalDescription(description);
       setModalSpaceId(task.space || "");
       const taskTagNames = task.tags
         .map((id) => tagMapRef.current[id]?.name)
@@ -1628,6 +1631,7 @@ export default function Home() {
 
   const openAddTaskModal = useCallback(() => {
     setModalTitle("");
+    modalDescriptionRef.current = "";
     setModalDescription("");
     setModalTags([]);
     setModalTagInput("");
@@ -1648,6 +1652,7 @@ export default function Home() {
   const closeModal = useCallback(() => {
     setEditingTask(null);
     setModalTitle("");
+    modalDescriptionRef.current = "";
     setModalDescription("");
     setModalSpaceId("");
     setModalTags([]);
@@ -1691,6 +1696,17 @@ export default function Home() {
     setModalTags((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleModalDescriptionChange = useCallback((html: string) => {
+    modalDescriptionRef.current = html;
+  }, []);
+
+  const handleModalTabChange = useCallback((tab: "details" | "comments") => {
+    if (tab === "comments") {
+      setModalDescription(modalDescriptionRef.current);
+    }
+    setModalTab(tab);
+  }, []);
+
   const handleTagKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if ((e.key === "Enter" || e.key === ",") && modalTagInput.trim()) {
@@ -1711,6 +1727,8 @@ export default function Home() {
     setSaving(true);
 
     try {
+      const description = modalDescriptionRef.current;
+
       // Resolve tag names to IDs (find or create) — scoped to the task's space
       const resolvedTags = await Promise.all(
         modalTags.map((name) => findOrCreateTag(name, user!.id, modalSpaceId))
@@ -1729,7 +1747,7 @@ export default function Home() {
         const { task, column } = editingTask as { task: Task; column: string };
         await updateTask(task.id, {
           title: modalTitle.trim(),
-          description: modalDescription,
+          description,
           space: modalSpaceId,
           tags: tagIds,
         });
@@ -1764,7 +1782,7 @@ export default function Home() {
         const updatedTask: Task = {
           id: task.id,
           title: modalTitle.trim(),
-          description: modalDescription,
+          description,
           space: modalSpaceId,
           tags: tagIds,
           recurring_job_id: task.recurring_job_id,
@@ -1782,7 +1800,7 @@ export default function Home() {
         const backlogCount = board.Backlog.length;
         const pbTask = await createTask({
           title: modalTitle.trim(),
-          description: modalDescription,
+          description,
           status: "backlog",
           tags: tagIds,
           space: modalSpaceId,
@@ -1827,7 +1845,6 @@ export default function Home() {
     }
   }, [
     modalTitle,
-    modalDescription,
     modalSpaceId,
     modalTags,
     saving,
@@ -2152,7 +2169,7 @@ export default function Home() {
           <div className="flex gap-1 mb-5 p-1 rounded-full" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", width: "fit-content" }}>
             <button
               type="button"
-              onClick={() => setModalTab("details")}
+              onClick={() => handleModalTabChange("details")}
               className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
               style={{
                 background: modalTab === "details" ? "rgba(255,255,255,0.1)" : "transparent",
@@ -2165,7 +2182,7 @@ export default function Home() {
             </button>
             <button
               type="button"
-              onClick={() => setModalTab("comments")}
+              onClick={() => handleModalTabChange("comments")}
               className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
               style={{
                 background: modalTab === "comments" ? "rgba(255,255,255,0.1)" : "transparent",
@@ -2378,7 +2395,7 @@ export default function Home() {
             </label>
             <TiptapEditor
               content={modalDescription}
-              onChange={setModalDescription}
+              onChange={handleModalDescriptionChange}
             />
           </div>
 
