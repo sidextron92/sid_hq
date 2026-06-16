@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo } from "react";
+import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo, type Dispatch, type SetStateAction } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { fastStripHtml } from "@/lib/html";
@@ -65,6 +65,7 @@ interface Task {
 }
 
 type Board = Record<string, Task[]>;
+type EditingTaskState = { task: Task; column: string } | "new" | null;
 
 const COLUMNS = ["Backlog", "To Do", "In Progress", "Done"];
 
@@ -616,6 +617,428 @@ function KanbanBoard({
   );
 }
 
+interface AppHeaderProps {
+  spaces: PBSpace[];
+  activeSpaceId: string;
+  searchQuery: string;
+  onActiveSpaceChange: (spaceId: string) => void;
+  onManageSpaces: () => void;
+  onSearchChange: (value: string) => void;
+  onAddTask: () => void;
+}
+
+const SpaceGridIcon = memo(function SpaceGridIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="14" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+    </svg>
+  );
+});
+
+const ManageIcon = memo(function ManageIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+});
+
+const AppHeader = memo(function AppHeader({
+  spaces,
+  activeSpaceId,
+  searchQuery,
+  onActiveSpaceChange,
+  onManageSpaces,
+  onSearchChange,
+  onAddTask,
+}: AppHeaderProps) {
+  const spaceOptions = useMemo(
+    () => [
+      { id: ALL_SPACES, label: "All Spaces", icon: <SpaceGridIcon /> },
+      ...spaces.map((s) => ({
+        id: s.id,
+        label: s.name + (s.is_default ? " ★" : ""),
+        icon: (
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: s.color,
+              boxShadow: `0 0 6px ${s.color}`,
+            }}
+          />
+        ),
+      })),
+      { id: "__manage__", label: "Manage Spaces...", icon: <ManageIcon /> },
+    ],
+    [spaces]
+  );
+
+  const handleSpaceSelect = useCallback(
+    (opt: { id: string }) => {
+      if (opt.id === "__manage__") {
+        onManageSpaces();
+      } else {
+        onActiveSpaceChange(opt.id);
+      }
+    },
+    [onActiveSpaceChange, onManageSpaces]
+  );
+
+  return (
+    <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
+            Control Centre
+          </h1>
+          <div className="hidden sm:block">
+            <GlassDropdown
+              size="sm"
+              width={200}
+              value={activeSpaceId}
+              options={spaceOptions}
+              onChange={handleSpaceSelect}
+            />
+          </div>
+        </div>
+
+        <div className="relative flex items-center justify-between sm:justify-start sm:gap-4 min-w-0">
+          <div className="sm:hidden">
+            <GlassDropdown
+              size="sm"
+              width={160}
+              value={activeSpaceId}
+              options={spaceOptions}
+              onChange={handleSpaceSelect}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <SearchToggle value={searchQuery} onChange={onSearchChange} />
+            <GlassButton size="sm" onClick={onAddTask}>
+              <span className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                <span className="hidden sm:inline">Add Task</span>
+              </span>
+            </GlassButton>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+});
+
+interface TaskModalProps {
+  open: boolean;
+  isEditing: boolean;
+  editingTask: EditingTaskState;
+  userId: string;
+  modalTab: "details" | "comments";
+  commentCount: number;
+  spaces: PBSpace[];
+  modalSpaceId: string;
+  modalSpaceTags: PBTag[];
+  modalTags: string[];
+  modalTagInput: string;
+  tagEditOpen: boolean;
+  modalTitle: string;
+  modalDescription: string;
+  recurringEnabled: boolean;
+  recurringPeriod: "daily" | "weekly" | "monthly";
+  recurringDays: number[];
+  deleting: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onTabChange: (tab: "details" | "comments") => void;
+  onModalSpaceChange: (spaceId: string) => void;
+  onToggleModalTag: (name: string) => void;
+  onRemoveTag: (index: number) => void;
+  onTagKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  setTagEditOpen: Dispatch<SetStateAction<boolean>>;
+  setModalTagInput: (value: string) => void;
+  setModalTitle: (value: string) => void;
+  onDescriptionChange: (html: string) => void;
+  setRecurringEnabled: (enabled: boolean) => void;
+  setRecurringPeriod: Dispatch<SetStateAction<"daily" | "weekly" | "monthly">>;
+  setRecurringDays: Dispatch<SetStateAction<number[]>>;
+  setCommentCount: (count: number) => void;
+  onDeleteTask: () => void;
+  onSaveTask: () => void;
+}
+
+const TaskModal = memo(function TaskModal({
+  open,
+  isEditing,
+  editingTask,
+  userId,
+  modalTab,
+  commentCount,
+  spaces,
+  modalSpaceId,
+  modalSpaceTags,
+  modalTags,
+  modalTagInput,
+  tagEditOpen,
+  modalTitle,
+  modalDescription,
+  recurringEnabled,
+  recurringPeriod,
+  recurringDays,
+  deleting,
+  saving,
+  onClose,
+  onTabChange,
+  onModalSpaceChange,
+  onToggleModalTag,
+  onRemoveTag,
+  onTagKeyDown,
+  setTagEditOpen,
+  setModalTagInput,
+  setModalTitle,
+  onDescriptionChange,
+  setRecurringEnabled,
+  setRecurringPeriod,
+  setRecurringDays,
+  setCommentCount,
+  onDeleteTask,
+  onSaveTask,
+}: TaskModalProps) {
+  return (
+    <GlassModal open={open} onClose={onClose} width={840}>
+      <h2 className="text-xl font-bold tracking-tight mb-1" style={{ color: "var(--text-main, #fcfcfd)" }}>
+        {isEditing ? "Edit Task" : "New Task"}
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+        {isEditing ? "Update task details or delete it." : "Add a new task to the Backlog."}
+      </p>
+
+      {isEditing && (
+        <div className="flex gap-1 mb-5 p-1 rounded-full" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", width: "fit-content" }}>
+          <button
+            type="button"
+            onClick={() => onTabChange("details")}
+            className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
+            style={{
+              background: modalTab === "details" ? "rgba(255,255,255,0.1)" : "transparent",
+              border: modalTab === "details" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
+              color: modalTab === "details" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+              boxShadow: modalTab === "details" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
+            }}
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={() => onTabChange("comments")}
+            className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
+            style={{
+              background: modalTab === "comments" ? "rgba(255,255,255,0.1)" : "transparent",
+              border: modalTab === "comments" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
+              color: modalTab === "comments" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
+              boxShadow: modalTab === "comments" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
+            }}
+          >
+            Comments{commentCount > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "rgba(99,102,241,0.5)", border: "1px solid rgba(99,102,241,0.6)", color: "#fff" }}>
+                {commentCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-5">
+        {modalTab === "details" && (
+          <>
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                  Space
+                </label>
+                <GlassDropdown
+                  size="sm"
+                  width={180}
+                  value={modalSpaceId}
+                  placeholder="Select a space..."
+                  options={spaces.map((s) => ({
+                    id: s.id,
+                    label: s.name + (s.is_default ? " ★" : ""),
+                    icon: <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: s.color, boxShadow: `0 0 6px ${s.color}` }} />,
+                  }))}
+                  onChange={(opt) => onModalSpaceChange(opt.id)}
+                />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                  Tags
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {modalTags.map((tag, i) => (
+                    <span key={i} className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none" style={{ background: "rgba(99, 102, 241, 0.45)", border: "1px solid rgba(255,255,255,0.2)" }} onClick={() => onRemoveTag(i)}>
+                      {tag}
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </span>
+                  ))}
+
+                  {modalSpaceId && modalSpaceTags.filter((t) => !modalTags.includes(t.name)).map((tag) => (
+                    <button key={tag.id} type="button" onClick={() => onToggleModalTag(tag.name)} className="text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none" style={{ background: hexToRgba(tag.color || "#6366f1", 0.2), border: "1px dashed rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.85)" }}>
+                      + {tag.name}
+                    </button>
+                  ))}
+
+                  {modalSpaceId && (
+                    <button type="button" onClick={() => setTagEditOpen((v) => !v)} className="flex items-center justify-center rounded-full cursor-pointer select-none" style={{ width: 28, height: 28, background: tagEditOpen ? "rgba(99, 102, 241, 0.4)" : "rgba(255, 255, 255, 0.1)", border: "1px solid rgba(255,255,255,0.15)", transition: "background 0.2s ease" }} title="Add new tag">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "rgba(255,255,255,0.7)" }}>
+                        {tagEditOpen ? (
+                          <>
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </>
+                        ) : (
+                          <>
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </>
+                        )}
+                      </svg>
+                    </button>
+                  )}
+
+                  {!modalSpaceId && modalTags.length === 0 && <span className="text-xs italic" style={{ color: "rgba(255,255,255,0.4)" }}>Select a space first</span>}
+                </div>
+
+                {tagEditOpen && modalSpaceId && (
+                  <div className="mt-3">
+                    <GlassFormField placeholder="Type a new tag and press Enter..." value={modalTagInput} onChange={setModalTagInput} onKeyDown={onTagKeyDown} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <GlassFormField label="Title" placeholder="Task title..." value={modalTitle} onChange={setModalTitle} autoFocus />
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                Description
+              </label>
+              <TiptapEditor content={modalDescription} onChange={onDescriptionChange} />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                  Recurring Task
+                </label>
+                <TactileSwitch scale={0.45} checked={recurringEnabled} onChange={setRecurringEnabled} />
+              </div>
+
+              {recurringEnabled && (
+                <div className="mt-4 flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.5)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                      Frequency
+                    </label>
+                    <SegmentControl
+                      segments={["Daily", "Weekly", "Monthly"]}
+                      activeIndex={["daily", "weekly", "monthly"].indexOf(recurringPeriod)}
+                      onChange={(idx) => {
+                        const periods = ["daily", "weekly", "monthly"] as const;
+                        setRecurringPeriod(periods[idx]);
+                        setRecurringDays([]);
+                      }}
+                    />
+                  </div>
+
+                  {recurringPeriod === "weekly" && (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.5)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                        Days of Week
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
+                          const selected = recurringDays.includes(i);
+                          return (
+                            <button key={day} type="button" onClick={() => setRecurringDays((prev) => selected ? prev.filter((d) => d !== i) : [...prev, i])} className="text-xs font-bold px-3 py-1.5 rounded-full cursor-pointer select-none" style={{ background: selected ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.08)", border: selected ? "1px solid rgba(99, 102, 241, 0.7)" : "1px solid rgba(255,255,255,0.15)", color: selected ? "#fff" : "rgba(255,255,255,0.6)" }}>
+                              {day}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {recurringPeriod === "monthly" && (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255, 255, 255, 0.5)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>
+                        Days of Month
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => {
+                          const selected = recurringDays.includes(date);
+                          return (
+                            <button key={date} type="button" onClick={() => setRecurringDays((prev) => selected ? prev.filter((d) => d !== date) : [...prev, date])} className="text-xs font-bold rounded-lg cursor-pointer select-none" style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", background: selected ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.08)", border: selected ? "1px solid rgba(99, 102, 241, 0.7)" : "1px solid rgba(255,255,255,0.1)", color: selected ? "#fff" : "rgba(255,255,255,0.6)" }}>
+                              {date}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {isEditing && editingTask !== "new" && editingTask !== null && (
+          <div style={{ display: modalTab === "comments" ? "block" : "none" }}>
+            <TaskCommentsPanel taskId={editingTask.task.id} currentUserId={userId} onCountChange={setCommentCount} />
+          </div>
+        )}
+
+        <div className="sticky flex items-center -mx-8 -mb-8 px-8 pt-4 pb-8 mt-2" style={{ bottom: "-2rem", background: "linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0.25) 60%, transparent)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, zIndex: 5 }}>
+          {isEditing && modalTab === "details" && (
+            <GlassButton size="sm" tint="rgba(239, 68, 68, 0.3)" onClick={onDeleteTask}>
+              <span className="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+                {deleting ? "Deleting..." : "Delete"}
+              </span>
+            </GlassButton>
+          )}
+
+          <div className="flex gap-3 ml-auto">
+            <GlassButton size="sm" onClick={onClose}>Cancel</GlassButton>
+            {modalTab === "details" && (
+              <GlassButton size="sm" tint="rgba(99, 102, 241, 0.3)" onClick={onSaveTask}>
+                {saving ? isEditing ? "Saving..." : "Creating..." : isEditing ? "Save" : "Create Task"}
+              </GlassButton>
+            )}
+          </div>
+        </div>
+      </div>
+    </GlassModal>
+  );
+});
+
 // ─── Component ──────────────────────────────────────
 export default function Home() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -632,7 +1055,7 @@ export default function Home() {
   const [spacesModalOpen, setSpacesModalOpen] = useState(false);
 
   // Unified modal state: null = closed, "new" = create, { task, column } = edit
-  const [editingTask, setEditingTask] = useState<{ task: Task; column: string } | "new" | null>(null);
+  const [editingTask, setEditingTask] = useState<EditingTaskState>(null);
   const [modalTitle, setModalTitle] = useState("");
   const [modalDescription, setModalDescription] = useState("");
   const modalDescriptionRef = useRef("");
@@ -840,6 +1263,14 @@ export default function Home() {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SHOW_ALL_DONE_KEY) === "true";
   });
+
+  const handleManageSpacesOpen = useCallback(() => {
+    setSpacesModalOpen(true);
+  }, []);
+
+  const handleToggleShowAllDone = useCallback(() => {
+    setShowAllDone((prev) => !prev);
+  }, []);
 
   // ─── Redirect if not authenticated ─────────────
   useEffect(() => {
@@ -1958,163 +2389,15 @@ export default function Home() {
           style={{ background: "rgba(0, 0, 0, 0.1)" }}
         />
 
-        {/* Header */}
-        <header className="relative z-30 px-4 sm:px-8 pt-6 sm:pt-8 pb-4 flex-shrink-0">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-          {/* Left: title + space dropdown (desktop inline, mobile title-only) */}
-          <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">
-              Control Centre
-            </h1>
-            {/* Space switcher — hidden on mobile (shown in controls row instead) */}
-            <div className="hidden sm:block">
-            <GlassDropdown
-              size="sm"
-              width={200}
-              value={activeSpaceId}
-              options={[
-                {
-                  id: ALL_SPACES,
-                  label: "All Spaces",
-                  icon: (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="3" y="3" width="7" height="7" />
-                      <rect x="14" y="3" width="7" height="7" />
-                      <rect x="3" y="14" width="7" height="7" />
-                      <rect x="14" y="14" width="7" height="7" />
-                    </svg>
-                  ),
-                },
-                ...spaces.map((s) => ({
-                  id: s.id,
-                  label: s.name + (s.is_default ? " ★" : ""),
-                  icon: (
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        background: s.color,
-                        boxShadow: `0 0 6px ${s.color}`,
-                      }}
-                    />
-                  ),
-                })),
-                {
-                  id: "__manage__",
-                  label: "Manage Spaces...",
-                  icon: (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                    </svg>
-                  ),
-                },
-              ]}
-              onChange={(opt) => {
-                if (opt.id === "__manage__") {
-                  setSpacesModalOpen(true);
-                } else {
-                  setActiveSpaceId(opt.id);
-                }
-              }}
-            />
-            </div>{/* end hidden sm:block */}
-          </div>{/* end left group */}
-          {/* Right: controls */}
-          <div className="relative flex items-center justify-between sm:justify-start sm:gap-4 min-w-0">
-            {/* Space switcher — mobile only (desktop lives in the left group) */}
-            <div className="sm:hidden">
-            <GlassDropdown
-              size="sm"
-              width={160}
-              value={activeSpaceId}
-              options={[
-                {
-                  id: ALL_SPACES,
-                  label: "All Spaces",
-                  icon: (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7" />
-                      <rect x="14" y="3" width="7" height="7" />
-                      <rect x="3" y="14" width="7" height="7" />
-                      <rect x="14" y="14" width="7" height="7" />
-                    </svg>
-                  ),
-                },
-                ...spaces.map((s) => ({
-                  id: s.id,
-                  label: s.name + (s.is_default ? " ★" : ""),
-                  icon: (
-                    <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: s.color, boxShadow: `0 0 6px ${s.color}` }} />
-                  ),
-                })),
-                {
-                  id: "__manage__",
-                  label: "Manage Spaces...",
-                  icon: (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                    </svg>
-                  ),
-                },
-              ]}
-              onChange={(opt) => {
-                if (opt.id === "__manage__") {
-                  setSpacesModalOpen(true);
-                } else {
-                  setActiveSpaceId(opt.id);
-                }
-              }}
-            />
-            </div>{/* end sm:hidden */}
-            <div className="flex items-center gap-3">
-            <SearchToggle
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
-            <GlassButton size="sm" onClick={openAddTaskModal}>
-              <span className="flex items-center gap-2">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span className="hidden sm:inline">Add Task</span>
-              </span>
-            </GlassButton>
-            </div>
-          </div>
-          </div>
-        </header>
+        <AppHeader
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          searchQuery={searchQuery}
+          onActiveSpaceChange={setActiveSpaceId}
+          onManageSpaces={handleManageSpacesOpen}
+          onSearchChange={setSearchQuery}
+          onAddTask={openAddTaskModal}
+        />
 
         {/* Kanban board */}
         <KanbanBoard
@@ -2132,12 +2415,11 @@ export default function Home() {
           cardRefs={cardRefs}
           onCardPointerDown={handleCardPointerDown}
           showAllDone={showAllDone}
-          onToggleShowAllDone={() => setShowAllDone((prev) => !prev)}
+          onToggleShowAllDone={handleToggleShowAllDone}
         />
       </div>
 
-      {/* Rain overlay */}
-      <RainOverlay active={rainActive} config={rainConfig} cardRefs={cardRefs} />
+      {rainActive && <RainOverlay active={rainActive} config={rainConfig} cardRefs={cardRefs} />}
 
       {/* Manage spaces modal */}
       {user && (
@@ -2149,472 +2431,43 @@ export default function Home() {
         />
       )}
 
-      {/* Create / Edit task modal */}
-      <GlassModal open={modalOpen} onClose={closeModal} width={840}>
-        <h2
-          className="text-xl font-bold tracking-tight mb-1"
-          style={{ color: "var(--text-main, #fcfcfd)" }}
-        >
-          {isEditing ? "Edit Task" : "New Task"}
-        </h2>
-        <p
-          className="text-sm mb-4"
-          style={{ color: "rgba(255, 255, 255, 0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
-        >
-          {isEditing ? "Update task details or delete it." : "Add a new task to the Backlog."}
-        </p>
-
-        {/* ── Tab bar (edit mode only) ── */}
-        {isEditing && (
-          <div className="flex gap-1 mb-5 p-1 rounded-full" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", width: "fit-content" }}>
-            <button
-              type="button"
-              onClick={() => handleModalTabChange("details")}
-              className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
-              style={{
-                background: modalTab === "details" ? "rgba(255,255,255,0.1)" : "transparent",
-                border: modalTab === "details" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
-                color: modalTab === "details" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                boxShadow: modalTab === "details" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
-              }}
-            >
-              Details
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModalTabChange("comments")}
-              className="px-5 py-1.5 rounded-full text-sm font-bold select-none transition-all"
-              style={{
-                background: modalTab === "comments" ? "rgba(255,255,255,0.1)" : "transparent",
-                border: modalTab === "comments" ? "1px solid rgba(255,255,255,0.15)" : "1px solid transparent",
-                color: modalTab === "comments" ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)",
-                boxShadow: modalTab === "comments" ? "0 4px 12px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.1)" : "none",
-              }}
-            >
-              Comments{commentCount > 0 && (
-                <span
-                  className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                  style={{
-                    background: "rgba(99,102,241,0.5)",
-                    border: "1px solid rgba(99,102,241,0.6)",
-                    color: "#fff",
-                  }}
-                >
-                  {commentCount}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-5">
-          {/* ── Details tab content ── */}
-          {modalTab === "details" && (
-            <>
-          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-5">
-            {/* Space selector */}
-            <div>
-              <label
-                className="block text-xs font-bold uppercase tracking-widest mb-2"
-                style={{
-                  color: "rgba(255, 255, 255, 0.7)",
-                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                }}
-              >
-                Space
-              </label>
-              <GlassDropdown
-                size="sm"
-                width={180}
-                value={modalSpaceId}
-                placeholder="Select a space..."
-                options={spaces.map((s) => ({
-                  id: s.id,
-                  label: s.name + (s.is_default ? " ★" : ""),
-                  icon: (
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        background: s.color,
-                        boxShadow: `0 0 6px ${s.color}`,
-                      }}
-                    />
-                  ),
-                }))}
-                onChange={(opt) => handleModalSpaceChange(opt.id)}
-              />
-            </div>
-
-            {/* Tags */}
-            <div className="flex-1 min-w-0">
-              <label
-                className="block text-xs font-bold uppercase tracking-widest mb-2"
-                style={{
-                  color: "rgba(255, 255, 255, 0.7)",
-                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                }}
-              >
-                Tags
-              </label>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {/* Selected tag chips */}
-                {modalTags.map((tag, i) => (
-                  <span
-                    key={i}
-                    className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
-                    style={{
-                      background: "rgba(99, 102, 241, 0.45)",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                    }}
-                    onClick={() => handleRemoveTag(i)}
-                  >
-                    {tag}
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </span>
-                ))}
-
-                {/* Suggestions from the space's existing tag pool */}
-                {modalSpaceId &&
-                  modalSpaceTags
-                    .filter((t) => !modalTags.includes(t.name))
-                    .map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => toggleModalTag(tag.name)}
-                        className="text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer select-none"
-                        style={{
-                          background: hexToRgba(tag.color || "#6366f1", 0.2),
-                          border: "1px dashed rgba(255,255,255,0.2)",
-                          color: "rgba(255,255,255,0.85)",
-                        }}
-                      >
-                        + {tag.name}
-                      </button>
-                    ))}
-
-                {/* Edit icon to toggle new tag input */}
-                {modalSpaceId && (
-                  <button
-                    type="button"
-                    onClick={() => setTagEditOpen((v) => !v)}
-                    className="flex items-center justify-center rounded-full cursor-pointer select-none"
-                    style={{
-                      width: 28,
-                      height: 28,
-                      background: tagEditOpen
-                        ? "rgba(99, 102, 241, 0.4)"
-                        : "rgba(255, 255, 255, 0.1)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      transition: "background 0.2s ease",
-                    }}
-                    title="Add new tag"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ color: "rgba(255,255,255,0.7)" }}
-                    >
-                      {tagEditOpen ? (
-                        <>
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </>
-                      ) : (
-                        <>
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                )}
-
-                {!modalSpaceId && modalTags.length === 0 && (
-                  <span
-                    className="text-xs italic"
-                    style={{ color: "rgba(255,255,255,0.4)" }}
-                  >
-                    Select a space first
-                  </span>
-                )}
-              </div>
-
-              {/* Expandable new tag input */}
-              {tagEditOpen && modalSpaceId && (
-                <div className="mt-3">
-                  <GlassFormField
-                    placeholder="Type a new tag and press Enter..."
-                    value={modalTagInput}
-                    onChange={setModalTagInput}
-                    onKeyDown={handleTagKeyDown}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <GlassFormField
-            label="Title"
-            placeholder="Task title..."
-            value={modalTitle}
-            onChange={setModalTitle}
-            autoFocus
-          />
-
-          {/* Description */}
-          <div>
-            <label
-              className="block text-xs font-bold uppercase tracking-widest mb-2"
-              style={{
-                color: "rgba(255, 255, 255, 0.7)",
-                textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-              }}
-            >
-              Description
-            </label>
-            <TiptapEditor
-              content={modalDescription}
-              onChange={handleModalDescriptionChange}
-            />
-          </div>
-
-          {/* ─── Recurring Task Section ─────────────── */}
-          <div>
-            <div className="flex items-center gap-3">
-              <label
-                className="text-xs font-bold uppercase tracking-widest"
-                style={{
-                  color: "rgba(255, 255, 255, 0.7)",
-                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                }}
-              >
-                Recurring Task
-              </label>
-              <TactileSwitch
-                scale={0.45}
-                checked={recurringEnabled}
-                onChange={setRecurringEnabled}
-              />
-            </div>
-
-            {recurringEnabled && (
-              <div className="mt-4 flex flex-col gap-4">
-                {/* Period selector */}
-                <div>
-                  <label
-                    className="block text-xs font-bold uppercase tracking-widest mb-2"
-                    style={{
-                      color: "rgba(255, 255, 255, 0.5)",
-                      textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                    }}
-                  >
-                    Frequency
-                  </label>
-                  <SegmentControl
-                    segments={["Daily", "Weekly", "Monthly"]}
-                    activeIndex={["daily", "weekly", "monthly"].indexOf(recurringPeriod)}
-                    onChange={(idx) => {
-                      const periods = ["daily", "weekly", "monthly"] as const;
-                      setRecurringPeriod(periods[idx]);
-                      setRecurringDays([]);
-                    }}
-                  />
-                </div>
-
-                {/* Weekly day picker */}
-                {recurringPeriod === "weekly" && (
-                  <div>
-                    <label
-                      className="block text-xs font-bold uppercase tracking-widest mb-2"
-                      style={{
-                        color: "rgba(255, 255, 255, 0.5)",
-                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                      }}
-                    >
-                      Days of Week
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
-                        const selected = recurringDays.includes(i);
-                        return (
-                          <button
-                            key={day}
-                            type="button"
-                            onClick={() =>
-                              setRecurringDays((prev) =>
-                                selected ? prev.filter((d) => d !== i) : [...prev, i]
-                              )
-                            }
-                            className="text-xs font-bold px-3 py-1.5 rounded-full cursor-pointer select-none"
-                            style={{
-                              background: selected
-                                ? "rgba(99, 102, 241, 0.5)"
-                                : "rgba(255, 255, 255, 0.08)",
-                              border: selected
-                                ? "1px solid rgba(99, 102, 241, 0.7)"
-                                : "1px solid rgba(255,255,255,0.15)",
-                              color: selected
-                                ? "#fff"
-                                : "rgba(255,255,255,0.6)",
-                            }}
-                          >
-                            {day}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Monthly date picker */}
-                {recurringPeriod === "monthly" && (
-                  <div>
-                    <label
-                      className="block text-xs font-bold uppercase tracking-widest mb-2"
-                      style={{
-                        color: "rgba(255, 255, 255, 0.5)",
-                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                      }}
-                    >
-                      Days of Month
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => {
-                        const selected = recurringDays.includes(date);
-                        return (
-                          <button
-                            key={date}
-                            type="button"
-                            onClick={() =>
-                              setRecurringDays((prev) =>
-                                selected ? prev.filter((d) => d !== date) : [...prev, date]
-                              )
-                            }
-                            className="text-xs font-bold rounded-lg cursor-pointer select-none"
-                            style={{
-                              width: 34,
-                              height: 34,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              background: selected
-                                ? "rgba(99, 102, 241, 0.5)"
-                                : "rgba(255, 255, 255, 0.08)",
-                              border: selected
-                                ? "1px solid rgba(99, 102, 241, 0.7)"
-                                : "1px solid rgba(255,255,255,0.1)",
-                              color: selected
-                                ? "#fff"
-                                : "rgba(255,255,255,0.6)",
-                            }}
-                          >
-                            {date}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          </>
-          )}
-
-          {/* ── Comments tab content ── */}
-          {isEditing && (
-            <div style={{ display: modalTab === "comments" ? "block" : "none" }}>
-              <TaskCommentsPanel
-                taskId={(editingTask as { task: { id: string } }).task.id}
-                currentUserId={user.id}
-                onCountChange={setCommentCount}
-              />
-            </div>
-          )}
-
-          <div
-            className="sticky flex items-center -mx-8 -mb-8 px-8 pt-4 pb-8 mt-2"
-            style={{
-              bottom: "-2rem",
-              background:
-                "linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0.25) 60%, transparent)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              borderBottomLeftRadius: 24,
-              borderBottomRightRadius: 24,
-              zIndex: 5,
-            }}
-          >
-            {/* Delete button — only in edit mode, details tab */}
-            {isEditing && modalTab === "details" && (
-              <GlassButton
-                size="sm"
-                tint="rgba(239, 68, 68, 0.3)"
-                onClick={handleDeleteTask}
-              >
-                <span className="flex items-center gap-2">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6" />
-                    <path d="M14 11v6" />
-                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                  </svg>
-                  {deleting ? "Deleting..." : "Delete"}
-                </span>
-              </GlassButton>
-            )}
-
-            <div className="flex gap-3 ml-auto">
-              <GlassButton size="sm" onClick={closeModal}>
-                Cancel
-              </GlassButton>
-              {modalTab === "details" && (
-              <GlassButton
-                size="sm"
-                tint="rgba(99, 102, 241, 0.3)"
-                onClick={handleSaveTask}
-              >
-                {saving
-                  ? isEditing ? "Saving..." : "Creating..."
-                  : isEditing ? "Save" : "Create Task"}
-              </GlassButton>
-              )}
-            </div>
-          </div>
-        </div>
-      </GlassModal>
+      <TaskModal
+        open={modalOpen}
+        isEditing={isEditing}
+        editingTask={editingTask}
+        userId={user.id}
+        modalTab={modalTab}
+        commentCount={commentCount}
+        spaces={spaces}
+        modalSpaceId={modalSpaceId}
+        modalSpaceTags={modalSpaceTags}
+        modalTags={modalTags}
+        modalTagInput={modalTagInput}
+        tagEditOpen={tagEditOpen}
+        modalTitle={modalTitle}
+        modalDescription={modalDescription}
+        recurringEnabled={recurringEnabled}
+        recurringPeriod={recurringPeriod}
+        recurringDays={recurringDays}
+        deleting={deleting}
+        saving={saving}
+        onClose={closeModal}
+        onTabChange={handleModalTabChange}
+        onModalSpaceChange={handleModalSpaceChange}
+        onToggleModalTag={toggleModalTag}
+        onRemoveTag={handleRemoveTag}
+        onTagKeyDown={handleTagKeyDown}
+        setTagEditOpen={setTagEditOpen}
+        setModalTagInput={setModalTagInput}
+        setModalTitle={setModalTitle}
+        onDescriptionChange={handleModalDescriptionChange}
+        setRecurringEnabled={setRecurringEnabled}
+        setRecurringPeriod={setRecurringPeriod}
+        setRecurringDays={setRecurringDays}
+        setCommentCount={setCommentCount}
+        onDeleteTask={handleDeleteTask}
+        onSaveTask={handleSaveTask}
+      />
 
       {/* Background gallery modal */}
       <BackgroundGalleryModal
