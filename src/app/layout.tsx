@@ -45,15 +45,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${quicksand.variable} h-full antialiased dark`}>
       <body className="min-h-full flex flex-col">
-        <Script id="display-mode-class" strategy="beforeInteractive">
-          {`(() => {
-            const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-            const ua = window.navigator.userAgent;
-            const safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Vivaldi/.test(ua);
-            if (standalone) document.documentElement.classList.add('pwa-standalone');
-            if (standalone && safari) document.documentElement.classList.add('safari-standalone');
-          })();`}
-        </Script>
         <AuthProvider>{children}</AuthProvider>
         <Script id="sw-register" strategy="afterInteractive">
           {`if ('serviceWorker' in navigator) {
