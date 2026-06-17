@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSummariesBaseUrl, buildRemoteIndexUrl, getSummaryAuthHeaders, normalizeSummaryDates, type SummaryDate } from "@/lib/summaries";
-
-const FALLBACK_DATES: SummaryDate[] = [
-  { date: "2026-06-17", channels: ["slack", "email", "whatsapp"] },
-  { date: "2026-06-16", channels: ["slack", "email", "whatsapp"] },
-  { date: "2026-06-15", channels: ["slack", "email", "whatsapp"] },
-];
+import { getSummariesBaseUrl, buildRemoteIndexUrl, getSummaryAuthHeaders, normalizeSummaryDates } from "@/lib/summaries";
 
 export async function GET() {
   const baseUrl = getSummariesBaseUrl();
 
   if (!baseUrl) {
-    return NextResponse.json({ dates: FALLBACK_DATES, source: "dummy" });
+    return NextResponse.json({ dates: [], source: "dummy", error: "Remote summaries are not configured" });
   }
 
   try {
@@ -22,17 +16,17 @@ export async function GET() {
 
     if (!response.ok) {
       return NextResponse.json(
-        { dates: FALLBACK_DATES, source: "dummy", error: `Remote index returned ${response.status}` },
+        { dates: [], source: "dummy", error: `Remote index returned ${response.status}` },
         { status: 200 }
       );
     }
 
     const data = await response.json();
     const dates = normalizeSummaryDates(data);
-    return NextResponse.json({ dates: dates.length ? dates : FALLBACK_DATES, source: dates.length ? "remote" : "dummy" });
+    return NextResponse.json({ dates, source: "remote" });
   } catch (error) {
     return NextResponse.json(
-      { dates: FALLBACK_DATES, source: "dummy", error: error instanceof Error ? error.message : "Failed to fetch remote dates" },
+      { dates: [], source: "dummy", error: error instanceof Error ? error.message : "Failed to fetch remote dates" },
       { status: 200 }
     );
   }
