@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, Fragment, useMemo, memo, type Dispatch, type SetStateAction } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fastStripHtml } from "@/lib/html";
 import {
@@ -720,6 +721,28 @@ const AppHeader = memo(function AppHeader({
             />
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              href="/summaries"
+              className="inline-flex items-center rounded-full px-5 py-2.5 text-[13px] font-bold text-white transition hover:scale-105 active:scale-95"
+              style={{
+                background: "rgba(255, 255, 255, 0.06)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35), inset 0 2px 4px rgba(255, 255, 255, 0.15)",
+                backdropFilter: "blur(5px) saturate(140%)",
+                WebkitBackdropFilter: "blur(5px) saturate(140%)",
+                textShadow: "0px 2px 12px rgba(0,0,0,0.4)",
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                  <path d="M8 7h8" />
+                  <path d="M8 11h6" />
+                </svg>
+                <span className="hidden sm:inline">Summaries</span>
+              </span>
+            </Link>
             <SearchToggle value={searchQuery} onChange={onSearchChange} />
             <GlassButton size="sm" onClick={onAddTask}>
               <span className="flex items-center gap-2">
