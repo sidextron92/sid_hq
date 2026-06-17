@@ -2354,13 +2354,13 @@ export default function Home() {
 
   return (
     <>
-      <div className="h-screen bg-background relative overflow-hidden flex flex-col">
+      <div className="app-shell h-screen bg-background relative overflow-hidden flex flex-col">
         {/* Dynamic background */}
         {activeBackground ? (
           activeBackground.type === "video" ? (
             <video
               key={activeBackground.id}
-              className="absolute inset-0 z-0 w-full h-full object-cover"
+              className="pwa-heavy-bg absolute inset-0 z-0 w-full h-full object-cover"
               src={activeBackground.fileUrl}
               autoPlay
               loop
@@ -2377,7 +2377,7 @@ export default function Home() {
           )
         ) : (
           <video
-            className="absolute inset-0 z-0 w-full h-full object-cover"
+            className="pwa-heavy-bg absolute inset-0 z-0 w-full h-full object-cover"
             src="/background.webm"
             autoPlay
             loop

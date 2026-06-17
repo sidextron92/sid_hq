@@ -171,7 +171,7 @@ export default function LiquidGlassWrap({
   return (
     <div
       ref={glassRef}
-      className={`relative overflow-visible select-none ${onClick ? "cursor-pointer" : ""} ${className}`}
+      className={`liquid-glass-wrap relative overflow-visible select-none ${onClick ? "cursor-pointer" : ""} ${className}`}
       style={{
         borderRadius: cornerRadius,
         boxShadow: shadow,
