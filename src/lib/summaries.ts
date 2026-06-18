@@ -1,3 +1,5 @@
+import MarkdownIt from "markdown-it";
+
 export type SummaryChannel = "slack" | "email" | "whatsapp";
 
 export type SummaryDate = {
@@ -49,7 +51,7 @@ export function buildRemoteSummaryUrl(date: string, channel: SummaryChannel) {
     return `${baseUrl}/api/summary/${encodeURIComponent(date)}/${encodeURIComponent(channel)}`;
   }
 
-  const path = [getReportsRoot(), date, SUMMARY_CHANNEL_FOLDER[channel], "summary.html"]
+  const path = [getReportsRoot(), date, SUMMARY_CHANNEL_FOLDER[channel], "summary.md"]
     .map(encodeURIComponent)
     .join("/");
   return `${baseUrl}/${path}`;
@@ -98,79 +100,13 @@ export function normalizeSummaryDates(input: unknown): SummaryDate[] {
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-function escapeHtmlText(value: string) {
-  return value
-    .replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]+|#\d+|#x[\da-fA-F]+);)/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+const summaryMarkdownRenderer = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true,
+  breaks: true,
+});
 
-function repairReportMessageText(html: string) {
-  const msgStartRe = /<div\s+class=("|')msg\1\s*>/gi;
-  let result = "";
-  let cursor = 0;
-  let match = msgStartRe.exec(html);
-
-  while (match) {
-    const blockStart = match.index;
-    const nextMatch = msgStartRe.exec(html);
-    const blockEnd = nextMatch?.index ?? html.length;
-
-    result += html.slice(cursor, blockStart);
-    result += normalizeReportMessageBlock(html.slice(blockStart, blockEnd));
-
-    cursor = blockEnd;
-    match = nextMatch;
-  }
-
-  result += html.slice(cursor);
-  return result;
-}
-
-function stripTrailingDivClosures(value: string) {
-  let next = value;
-  for (let i = 0; i < 3; i += 1) {
-    next = next.replace(/\s*<\/div>\s*$/i, "");
-  }
-  return next;
-}
-
-function normalizeReportMessageBlock(block: string) {
-  const time = block.match(/<div\s+class=("|')time\1\s*>([\s\S]*?)<\/div>/i)?.[2] ?? "";
-  const badge = block.match(/<span\s+class=("|')badge\s+(ch|dm)\1\s*>([\s\S]*?)<\/span>/i);
-  const author = block.match(/<span\s+class=("|')author\1\s*>([\s\S]*?)<\/span>/i)?.[2] ?? "";
-  const textOpen = block.match(/<div\s+class=("|')text\1\s*>/i);
-
-  if (!textOpen || textOpen.index === undefined) return block;
-
-  const contentStart = textOpen.index + textOpen[0].length;
-  const text = stripTrailingDivClosures(block.slice(contentStart));
-  const badgeType = badge?.[2] === "dm" ? "dm" : "ch";
-  const badgeText = badge?.[3] ?? "";
-
-  return `
-  <div class="msg">
-    <div class="time">${escapeHtmlText(time)}</div>
-    <div class="body">
-      <span class="badge ${badgeType}">${escapeHtmlText(badgeText)}</span><span class="author">${escapeHtmlText(author)}</span>
-      <div class="text">${escapeHtmlText(text)}</div>
-    </div>
-  </div>`;
-}
-
-export function sanitizeSummaryHtml(html: string) {
-  const bodyMatch = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-  const bodyHtml = repairReportMessageText(bodyMatch ? bodyMatch[1] : html);
-
-  return bodyHtml
-    .replace(/<!doctype[^>]*>/gi, "")
-    .replace(/<\/?html\b[^>]*>/gi, "")
-    .replace(/<head\b[^<]*(?:(?!<\/head>)<[^<]*)*<\/head>/gi, "")
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    .replace(/<(iframe|object|embed|link|meta|base)\b[^>]*>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s+(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi, "");
+export function renderSummaryMarkdown(markdown: string) {
+  return summaryMarkdownRenderer.render(markdown);
 }

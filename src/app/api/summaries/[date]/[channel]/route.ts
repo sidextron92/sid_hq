@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildRemoteSummaryUrl, getSummariesBaseUrl, getSummaryAuthHeaders, isSummaryChannel, isSummaryDate, sanitizeSummaryHtml } from "@/lib/summaries";
+import { buildRemoteSummaryUrl, getSummariesBaseUrl, getSummaryAuthHeaders, isSummaryChannel, isSummaryDate, renderSummaryMarkdown } from "@/lib/summaries";
 
 export async function GET(_request: Request, context: RouteContext<"/api/summaries/[date]/[channel]">) {
   const { date, channel } = await context.params;
@@ -11,7 +11,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/summari
   const baseUrl = getSummariesBaseUrl();
 
   if (!baseUrl) {
-    return NextResponse.json({ html: "", source: "dummy", error: "Remote summaries are not configured" });
+    return NextResponse.json({ markup: "", markdown: "", source: "dummy", error: "Remote summaries are not configured" });
   }
 
   try {
@@ -22,16 +22,16 @@ export async function GET(_request: Request, context: RouteContext<"/api/summari
 
     if (!response.ok) {
       return NextResponse.json(
-        { html: "", source: "dummy", error: `Remote summary returned ${response.status}` },
+        { markup: "", markdown: "", source: "dummy", error: `Remote summary returned ${response.status}` },
         { status: 200 }
       );
     }
 
-    const html = sanitizeSummaryHtml(await response.text());
-    return NextResponse.json({ html, source: "remote" });
+    const markdown = await response.text();
+    return NextResponse.json({ markup: renderSummaryMarkdown(markdown), markdown, source: "remote" });
   } catch (error) {
     return NextResponse.json(
-      { html: "", source: "dummy", error: error instanceof Error ? error.message : "Failed to fetch remote summary" },
+      { markup: "", markdown: "", source: "dummy", error: error instanceof Error ? error.message : "Failed to fetch remote summary" },
       { status: 200 }
     );
   }

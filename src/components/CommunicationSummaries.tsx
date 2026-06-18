@@ -40,7 +40,7 @@ export default function CommunicationSummaries() {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<Channel>("slack");
   const [availableDates, setAvailableDates] = useState<SummaryDate[]>([]);
-  const [summaryHtml, setSummaryHtml] = useState("");
+  const [summaryMarkup, setSummaryMarkup] = useState("");
   const [loadingDates, setLoadingDates] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [error, setError] = useState("");
@@ -82,7 +82,7 @@ export default function CommunicationSummaries() {
 
     async function loadSummary() {
       if (!selectedDate) {
-        setSummaryHtml("");
+        setSummaryMarkup("");
         setLoadingSummary(false);
         return;
       }
@@ -93,11 +93,11 @@ export default function CommunicationSummaries() {
         const data = await response.json();
         if (!active) return;
 
-        setSummaryHtml(typeof data.html === "string" ? data.html : "");
+        setSummaryMarkup(typeof data.markup === "string" ? data.markup : "");
         setError(data.error || "");
       } catch (err) {
         if (!active) return;
-        setSummaryHtml("");
+        setSummaryMarkup("");
         setError(err instanceof Error ? err.message : "Could not load summary");
       } finally {
         if (active) setLoadingSummary(false);
@@ -117,7 +117,7 @@ export default function CommunicationSummaries() {
   const selectedChannelIndex = CHANNELS.findIndex((channel) => channel.id === selectedChannel);
   const channelMeta = CHANNELS[selectedChannelIndex] ?? CHANNELS[0];
   const showInitialLoading = loadingDates && availableDates.length === 0;
-  const showSummaryLoading = loadingSummary || (Boolean(selectedDate) && !summaryHtml && !error);
+  const showSummaryLoading = loadingSummary || (Boolean(selectedDate) && !summaryMarkup && !error);
 
   return (
     <main className="relative z-10 flex-1 px-4 sm:px-8 pb-8 overflow-hidden">
@@ -247,15 +247,15 @@ export default function CommunicationSummaries() {
                     ))}
                   </div>
                 </div>
-              ) : summaryHtml ? (
+              ) : summaryMarkup ? (
                 <article
-                  className="summary-html rounded-[28px] p-5 sm:p-7"
+                  className="summary-html summary-markdown rounded-[28px] p-5 sm:p-7"
                   style={{
                     background: "rgba(0,0,0,0.24)",
                     border: "1px solid rgba(255,255,255,0.08)",
                     boxShadow: "inset 0 1px 18px rgba(0,0,0,0.28)",
                   }}
-                  dangerouslySetInnerHTML={{ __html: summaryHtml }}
+                  dangerouslySetInnerHTML={{ __html: summaryMarkup }}
                 />
               ) : (
                 <div

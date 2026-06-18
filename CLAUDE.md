@@ -58,6 +58,20 @@ npm run lint       # ESLint
 - Legacy Node cron script: `scripts/cron-recurring.mjs` — kept for local/manual use; requires `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`
 - CRUD functions in `src/lib/pocketbase.ts`: `createRecurringJob`, `updateRecurringJob`, `deleteRecurringJob`, `fetchRecurringJobForTask`, `fetchRecurringJobById`
 
+### Communication Summaries
+- Summary UI lives at `src/components/CommunicationSummaries.tsx` and is mounted by `src/app/summaries/page.tsx`.
+- Supported channels are `slack`, `email`, and `whatsapp`; shared channel/date helpers live in `src/lib/summaries.ts`.
+- Date discovery uses `GET /api/summaries/dates`, proxied by `src/app/api/summaries/dates/route.ts`.
+- Summary content uses `GET /api/summaries/[date]/[channel]`, proxied by `src/app/api/summaries/[date]/[channel]/route.ts`.
+- The upstream summary service now returns Markdown, not HTML. Do not restore direct upstream HTML rendering.
+- Markdown is rendered server-side with `markdown-it` in `renderSummaryMarkdown()` with `html: false`, `linkify: true`, `typographer: true`, and `breaks: true`.
+- The API route returns `{ markup, markdown, source, error? }`; the UI renders `markup` inside the existing `.summary-html.summary-markdown` container.
+- Because Markdown raw HTML is disabled, embedded HTML/scripts from the upstream service are escaped instead of executed.
+- In file-path mode (`SUMMARIES_USE_FILE_PATHS=true`), summary files resolve to `Daily Reports/<date>/<Channel>/summary.md` unless `SUMMARIES_REPORTS_ROOT` overrides the root.
+- Styling for rendered Markdown and legacy API classes is in `src/app/globals.css` under the “Rendered communication summary HTML” block. Keep generic Markdown styles there for headings, lists, links, blockquotes, code, and tables.
+- Summary service configuration uses server-only env vars: `SUMMARIES_BASE_URL`, optional `SUMMARIES_API_KEY`, optional `SUMMARIES_INDEX_URL`, optional `SUMMARIES_SUMMARY_URL`, optional `SUMMARIES_USE_FILE_PATHS`, and optional `SUMMARIES_REPORTS_ROOT`.
+- If `SUMMARIES_SUMMARY_URL` is set, it may include `{date}` and `{channel}` placeholders. Otherwise non-file-path mode calls `/api/summary/{date}/{channel}` on `SUMMARIES_BASE_URL`.
+
 ### Environment
 ```
 NEXT_PUBLIC_POCKETBASE_URL=<pocketbase-instance-url>
